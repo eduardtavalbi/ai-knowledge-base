@@ -1,3 +1,4 @@
+﻿
 services:
   db:
     image: pgvector/pgvector:pg17
@@ -17,5 +18,20 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  api:
+    build: .
+    container_name: ai_knowledge_base_api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-knowledge_base}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
-  postgres_data: {}
+  postgres_data:
+    external: true
+    name: ai_knowledge_base_vector_data
