@@ -82,3 +82,42 @@ python -m pytest
 ## Project Status
 
 This project is under active development.
+
+## API Examples
+
+### Create a document
+
+`POST /documents/`
+
+Request:
+
+```json
+{
+  "title": "Python Learning Guide",
+  "content": "Python is a programming language used for backend development, automation, and artificial intelligence."
+}
+```
+
+Successful response (`201 Created`):
+
+```json
+{
+  "id": <generated-id>,
+  "title": "Python Learning Guide",
+  "content": "Python is a programming language used for backend development, automation, and artificial intelligence."
+}
+```
+
+### Semantic search
+
+`GET /documents/search?q=How%20to%20develop%20server-side%20application&limit=5`
+
+Example request:
+
+```bash
+curl -X GET "http://127.0.0.1:8000/documents/search?q=How%20to%20develop%20server-side%20application&limit=5" -H "accept: application/json"
+```
+
+The API returns documents ranked by semantic relevance to the query.
+
+Interactive API documentation is available at `/docs` when the server is running.
