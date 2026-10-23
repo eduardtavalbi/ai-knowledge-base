@@ -1,0 +1,12 @@
+fastapi[standard]
+sqlalchemy[asyncio]
+asyncpg
+alembic
+pydantic-settings
+pytest
+pytest-asyncio
+httpx
+sentence-transformers==6.1.0
+pgvector
+aiosqlite
+psycopg2-binary
