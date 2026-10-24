@@ -726,3 +726,114 @@ button:disabled {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.delete-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  margin-left: auto;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #7f8798;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.delete-button:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.edit-modal {
+  width: min(680px, 100%);
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.edit-form label {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 8px;
+}
+
+.edit-form input,
+.edit-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid #303849;
+  border-radius: 10px;
+  background: #111722;
+  color: #f1f5f9;
+  font: inherit;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.edit-form input:focus,
+.edit-form textarea:focus {
+  border-color: #818cf8;
+}
+
+.edit-form textarea {
+  resize: vertical;
+  min-height: 180px;
+  line-height: 1.6;
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.edit-cancel {
+  padding: 10px 16px;
+  border: 1px solid #303849;
+  border-radius: 10px;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.edit-cancel:hover {
+  background: #222b3a;
+}
+
+.edit-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.edit-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #7f8798;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.edit-button:hover {
+  background: rgba(129, 140, 248, 0.12);
+  color: #a5b4fc;
+}

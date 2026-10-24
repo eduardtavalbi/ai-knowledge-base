@@ -1,5 +1,5 @@
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   BrainCircuit,
   Search,
@@ -13,6 +13,7 @@ import {
   Clock3,
   X,
   LoaderCircle,
+  Trash2,
 } from 'lucide-react'
 import './App.css'
 
@@ -45,14 +46,39 @@ const demoDocuments: DocumentItem[] = [
 
 function App() {
   const [query, setQuery] = useState('')
-  const [documents, setDocuments] = useState(demoDocuments)
+  const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [results, setResults] = useState<DocumentItem[]>(demoDocuments)
+  const [activePage, setActivePage] = useState<'search' | 'documents'>('search')
   const [selectedDocument, setSelectedDocument] = useState<DocumentItem | null>(null)
+  const [editingDocument, setEditingDocument] = useState<DocumentItem | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editContent, setEditContent] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
 
-  
+  useEffect(() => {
+    void loadDocuments()
+  }, [])
+
+  async function loadDocuments() {
+    try {
+      const response = await fetch('http://localhost:8000/documents/')
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const data: DocumentItem[] = await response.json()
+      setDocuments(data)
+    } catch (error) {
+      console.error('Ошибка загрузки документов:', error)
+      setMessage('Не удалось загрузить список документов.')
+    }
+  }
+
   async function searchDocuments(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -115,7 +141,116 @@ function App() {
       event.target.value = ''
     }
   }
+  async function deleteDocument(document: DocumentItem) {
+  if (deletingDocumentId !== null) return
 
+  const confirmed = window.confirm(
+    `Удалить документ «${document.title}»?`,
+  )
+
+  if (!confirmed) return
+
+  setDeletingDocumentId(document.id)
+  setMessage('')
+
+  try {
+    const response = await fetch(
+      `http://localhost:8000/documents/${document.id}`,
+      { method: 'DELETE' },
+    )
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    setDocuments((current) =>
+      current.filter((item) => item.id !== document.id),
+    )
+
+    setResults((current) =>
+      current.filter((item) => item.id !== document.id),
+    )
+
+    setSelectedDocument((current) =>
+      current?.id === document.id ? null : current,
+    )
+
+    setMessage(`Документ «${document.title}» удалён.`)
+  } catch (error) {
+    console.error('Ошибка удаления:', error)
+    setMessage('Не удалось удалить документ. Попробуй ещё раз.')
+  } finally {
+    setDeletingDocumentId(null)
+  }
+}
+  async function updateDocument() {
+    if (!editingDocument) return
+
+    if (!editTitle.trim() || !editContent.trim()) {
+      setMessage('Название и содержимое не должны быть пустыми.')
+      return
+    }
+
+    setSavingEdit(true)
+
+    try {
+      const response = await fetch(
+        `http://localhost:8000/documents/${editingDocument.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            title: editTitle.trim(),
+            content: editContent.trim(),
+          }),
+        },
+      )
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const updatedDocument: DocumentItem = await response.json()
+
+      setDocuments((current) =>
+        current.map((item) =>
+          item.id === updatedDocument.id ? updatedDocument : item,
+        ),
+      )
+
+      setResults((current) =>
+        current.map((item) =>
+          item.id === updatedDocument.id ? updatedDocument : item,
+        ),
+      )
+
+      if (query.trim()) {
+        try {
+          const searchResponse = await fetch(
+            `http://localhost:8000/documents/search?q=${encodeURIComponent(query)}&limit=10`,
+          )
+
+          if (searchResponse.ok) {
+            const freshResults: DocumentItem[] = await searchResponse.json()
+            setResults(freshResults)
+          }
+        } catch (error) {
+          console.error('Ошибка обновления результатов поиска:', error)
+        }
+      }
+
+      setSelectedDocument(updatedDocument)
+      setEditingDocument(null)
+      setMessage('Документ успешно обновлён.')
+    } catch (error) {
+      console.error('Ошибка обновления документа:', error)
+      setMessage('Не удалось сохранить изменения.')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -126,11 +261,20 @@ function App() {
 
         <div className="workspace-label">WORKSPACE</div>
 
-        <button className="nav-item active">
+        <button
+          className={`nav-item ${activePage === 'search' ? 'active' : ''}`}
+          onClick={() => setActivePage('search')}
+        >
           <Search size={18} />
           <span>Семантический поиск</span>
         </button>
-        <button className="nav-item">
+        <button
+          className={`nav-item ${activePage === 'documents' ? 'active' : ''}`}
+          onClick={() => {
+            setActivePage('documents')
+            void loadDocuments()
+          }}
+        >
           <Database size={18} />
           <span>Моя база знаний</span>
           <span className="nav-count">{documents.length}</span>
@@ -168,6 +312,90 @@ function App() {
         </header>
 
         <section className="content-wrap">
+          {activePage === 'documents' && (
+            <section className="results-section">
+              <div className="section-heading">
+                <div>
+                  <h2>Моя база знаний</h2>
+                  <p>Все документы, сохранённые в базе данных</p>
+                </div>
+                <span className="result-count">
+                  {documents.length} документов
+                </span>
+              </div>
+
+              <div className="results-list">
+                {documents.map((document) => (
+                  <article
+                    className="result-card"
+                    key={document.id}
+                    onClick={() => setSelectedDocument(document)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        setSelectedDocument(document)
+                      }
+                    }}
+                  >
+                    <div className="document-icon">
+                      <FileText size={21} />
+                    </div>
+                    <div className="result-info">
+                      <h3>{document.title}</h3>
+                      <p>{document.content}</p>
+                      <div className="result-meta">
+                        <span><Database size={13} /> Документ</span>
+                        <span><Clock3 size={13} /> В базе знаний</span>
+                      </div>
+                    </div>
+                    <button
+                      className="edit-button"
+                      title="Редактировать документ"
+                      aria-label={`Редактировать ${document.title}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setEditingDocument(document)
+                        setEditTitle(document.title)
+                        setEditContent(document.content)
+                        setMessage('')
+                      }}
+                    >
+                      <FileText size={18} />
+                    </button>
+                    <button
+                      className="delete-button"
+                      title={
+                        deletingDocumentId === document.id
+                          ? 'Удаление...'
+                          : 'Удалить документ'
+                      }
+                      aria-label={`Удалить ${document.title}`}
+                      disabled={deletingDocumentId !== null}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void deleteDocument(document)
+                      }}
+                    >
+                      {deletingDocumentId === document.id ? (
+                        <LoaderCircle className="spin" size={18} />
+                      ) : (
+                        <Trash2 size={18} />
+                      )}
+                    </button>
+                  </article>
+                ))}
+
+                {documents.length === 0 && (
+                  <div className="empty-state">
+                    Документы пока не загружены.
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+          {activePage === 'search' && (
           <div className="hero">
             <div className="eyebrow">
               <Sparkles size={15} /> AI-POWERED KNOWLEDGE
@@ -210,9 +438,9 @@ function App() {
               ))}
             </div>
           </div>
-
+          )}
           {message && <div className="message-banner">{message}</div>}
-
+          {activePage === 'search' && (
           <section className="results-section">
             <div className="section-heading">
               <div>
@@ -254,7 +482,8 @@ function App() {
               )}
             </div>
           </section>
-
+          )}
+          {activePage === 'search' && (
           <section className="upload-section">
             <div className="upload-copy">
               <div className="upload-icon"><Upload size={20} /></div>
@@ -277,6 +506,7 @@ function App() {
               <Plus size={17} /> Добавить документ
             </button>
           </section>
+          )}
 
           <footer className="footer">
             <span><span className="status-indicator" /> Mindbase workspace</span>
@@ -284,6 +514,73 @@ function App() {
           </footer>
         </section>
       </main>
+      {editingDocument && (
+        <div
+          className="modal-overlay"
+          onClick={() => setEditingDocument(null)}
+        >
+          <section
+            className="document-modal edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-document-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setEditingDocument(null)}
+              aria-label="Закрыть редактор"
+            >
+              <X size={20} />
+            </button>
+
+            <h2 id="edit-document-title">Редактирование документа</h2>
+
+            <form
+              className="edit-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void updateDocument()
+              }}
+            >
+              <label htmlFor="edit-title">Название</label>
+              <input
+                id="edit-title"
+                value={editTitle}
+                onChange={(event) => setEditTitle(event.target.value)}
+                required
+              />
+
+              <label htmlFor="edit-content">Содержимое</label>
+              <textarea
+                id="edit-content"
+                value={editContent}
+                onChange={(event) => setEditContent(event.target.value)}
+                rows={10}
+                required
+              />
+
+              <div className="edit-actions">
+                <button
+                  type="button"
+                  className="edit-cancel"
+                  onClick={() => setEditingDocument(null)}
+                >
+                  Отмена
+                </button>
+
+                <button
+                  type="submit"
+                  className="upload-button"
+                  disabled={savingEdit}
+                >
+                  {savingEdit ? 'Сохранение…' : 'Сохранить'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
       {selectedDocument && (
         <div
           className="modal-overlay"
