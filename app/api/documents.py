@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.db.session import get_db
 from app.models.document import  Document
-from app.schemas.document import DocumentCreate, DocumentResponse, DocumentUpdate
+from app.schemas.document import DocumentCreate, DocumentResponse, DocumentUpdate, SearchResultResponse
 
 router = APIRouter(
     prefix="/documents",
@@ -43,7 +43,7 @@ async def get_documents(
 
     return documents
 
-@router.get("/search", response_model=list[DocumentResponse])
+@router.get("/search", response_model=list[SearchResultResponse])
 async def search_documents_endpoint(
     q: str,
     db: AsyncSession = Depends(get_db),

@@ -9,6 +9,12 @@ class DocumentResponse(BaseModel):
     title: str
     content: str
 
+class SearchResultResponse(BaseModel):
+    id: int
+    title: str
+    content: str
+    score: float
+
 class DocumentUpdate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     content: str = Field(min_length=1)
