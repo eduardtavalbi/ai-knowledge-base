@@ -837,3 +837,74 @@ button:disabled {
   background: rgba(129, 140, 248, 0.12);
   color: #a5b4fc;
 }
+
+.ai-answer-card {
+  margin-bottom: 28px;
+  padding: 24px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 18px;
+  background: linear-gradient(
+    145deg,
+    rgba(139, 92, 246, 0.09),
+    rgba(30, 30, 46, 0.55)
+  );
+}
+
+.ai-answer-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  color: #b9a0ff;
+}
+
+.ai-answer-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.ai-answer-text {
+  color: var(--text-primary, #f1f0f7);
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-sources {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ai-sources > h3 {
+  margin: 0 0 14px;
+  font-size: 14px;
+}
+
+.ai-source-card {
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.ai-source-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.ai-source-card p {
+  margin: 10px 0;
+  color: var(--text-secondary, #aaa6ba);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.ai-source-card > span {
+  color: var(--text-secondary, #aaa6ba);
+  font-size: 11px;
+}

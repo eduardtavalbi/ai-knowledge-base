@@ -1,4 +1,5 @@
-
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useEffect, useRef, useState } from 'react'
 import {
   BrainCircuit,
@@ -21,6 +22,20 @@ type DocumentItem = {
   id: number
   title: string
   content: string
+}
+
+type AskSource = {
+  document_id: number
+  title: string
+  content: string
+  score: number
+  chunk_id: number
+  chunk_index: number
+}
+
+type AskResponse = {
+  answer: string
+  sources: AskSource[]
 }
 
 const demoDocuments: DocumentItem[] = [
@@ -58,6 +73,8 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
+  const [aiAnswer, setAiAnswer] = useState('')
+  const [answerSources, setAnswerSources] = useState<AskSource[]>([])
 
   useEffect(() => {
     void loadDocuments()
@@ -65,7 +82,7 @@ function App() {
 
   async function loadDocuments() {
     try {
-      const response = await fetch('http://localhost:8000/documents/')
+      const response = await fetch('http://127.0.0.1:8000/documents/')
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
@@ -83,38 +100,59 @@ function App() {
     event.preventDefault()
 
     if (!query.trim()) {
-      setMessage('Введи запрос для поиска.')
+      setMessage('Введи вопрос для поиска.')
       return
     }
 
     setLoading(true)
     setMessage('')
+    setAiAnswer('')
+    setAnswerSources([])
+    setResults([])
 
     try {
-      const response = await fetch(
-        `http://localhost:8000/documents/search?q=${encodeURIComponent(query)}&limit=10`,
-      )
+      const response = await fetch('http://127.0.0.1:8000/documents/ask', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: query.trim(),
+        }),
+      })
 
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(`HTTP ${response.status}: ${errorText}`)
       }
 
-      const data: DocumentItem[] = await response.json()
-      setResults(data)
-      setMessage(data.length ? '' : 'По твоему запросу ничего не найдено.')
+      const data: AskResponse = await response.json()
+
+      setAiAnswer(data.answer)
+      setAnswerSources(data.sources ?? [])
+
+      setResults(
+        (data.sources ?? []).map((source) => ({
+          id: source.document_id,
+          title: source.title,
+          content: source.content,
+        })),
+      )
+
+      if (!data.answer && !data.sources?.length) {
+        setMessage('Не удалось найти информацию по этому вопросу.')
+      }
     } catch (error) {
-      console.error('Ошибка поиска:', error)
+      console.error('Ошибка запроса к ИИ:', error)
       setMessage(
         error instanceof Error
-          ? `Ошибка поиска: ${error.message}`
-          : 'Произошла неизвестная ошибка.',
+          ? `Ошибка: ${error.message}`
+          : 'Не удалось получить ответ от ИИ.',
       )
     } finally {
       setLoading(false)
     }
   }
-
   async function uploadFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -123,7 +161,7 @@ function App() {
     formData.append('file', file)
 
     try {
-      const response = await fetch('http://localhost:8000/documents/upload', {
+      const response = await fetch('http://127.0.0.1:8000/documents/upload', {
         method: 'POST',
         body: formData,
       })
@@ -155,7 +193,7 @@ function App() {
 
   try {
     const response = await fetch(
-      `http://localhost:8000/documents/${document.id}`,
+      `http://127.0.0.1:8000/documents/${document.id}`,
       { method: 'DELETE' },
     )
 
@@ -195,7 +233,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/documents/${editingDocument.id}`,
+        `http://127.0.0.1:8000/${editingDocument.id}`,
         {
           method: 'PUT',
           headers: {
@@ -229,7 +267,7 @@ function App() {
       if (query.trim()) {
         try {
           const searchResponse = await fetch(
-            `http://localhost:8000/documents/search?q=${encodeURIComponent(query)}&limit=10`,
+            `http://127.0.0.1:8000/documents/search?q=${encodeURIComponent(query)}&limit=10`,
           )
 
           if (searchResponse.ok) {
@@ -438,6 +476,45 @@ function App() {
               ))}
             </div>
           </div>
+          )}
+          {activePage === 'search' && aiAnswer && (
+            <section className="ai-answer-card">
+              <div className="ai-answer-heading">
+                <Sparkles size={20} />
+                <h2>Ответ Mindbase AI</h2>
+              </div>
+
+              <div className="ai-answer-text">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {aiAnswer.replace(/\\([*`_[\]()#+.!>-])/g, '$1')}
+                </ReactMarkdown>
+              </div>
+
+              {answerSources.length > 0 && (
+                <div className="ai-sources">
+                  <h3>Источники ответа</h3>
+
+                  {answerSources.map((source) => (
+                    <article
+                      className="ai-source-card"
+                      key={source.chunk_id}
+                    >
+                      <div className="ai-source-title">
+                        <FileText size={16} />
+                        <strong>{source.title}</strong>
+                      </div>
+
+                      <p>{source.content}</p>
+
+                      <span>
+                        Фрагмент документа · релевантность:{' '}
+                        {(source.score * 100).toFixed(1)}%
+                      </span>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
           )}
           {message && <div className="message-banner">{message}</div>}
           {activePage === 'search' && (
