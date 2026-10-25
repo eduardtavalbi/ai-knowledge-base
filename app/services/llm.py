@@ -14,10 +14,9 @@ def get_gemini_client():
     return genai.Client(api_key=settings.gemini_api_key)
 
 
-client = get_gemini_client()
-
-
 async def generate_answer(question: str, context: str) -> str:
+    client = get_gemini_client()
+
     for attempt in range(3):
         try:
             response = await client.aio.models.generate_content(
