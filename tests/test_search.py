@@ -22,13 +22,30 @@ async def test_search_documents_returns_unique_documents():
 
     result = MagicMock()
     result.all.return_value = [
+        (first, 0.1, 0),
+        (first, 0.2, 0),
+        (second, 0.3, 0),
+    ]
+
+    title_result = MagicMock()
+    title_result.scalars.return_value.all.return_value = []
+
+    semantic_result = MagicMock()
+    semantic_result.all.return_value = [
         (first, 0.1),
         (first, 0.2),
         (second, 0.3),
     ]
 
     db = AsyncMock()
-    db.execute.return_value = result
+    text_result = MagicMock()
+    text_result.all.return_value = []
+
+    db.execute.side_effect = [
+        title_result,
+        text_result,
+        semantic_result,
+    ]
 
     with patch(
         "app.services.search.generate_embedding",
@@ -46,7 +63,7 @@ async def test_search_documents_returns_unique_documents():
     assert documents[0]["content"] == "Content of First"
 
     mock_embedding.assert_called_once_with("Python")
-    db.execute.assert_awaited_once()
+    assert db.execute.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -56,12 +73,28 @@ async def test_search_documents_filters_low_scores():
 
     result = MagicMock()
     result.all.return_value = [
+        (accepted, 0.55, 0),
+        (rejected, 0.56, 0),
+    ]
+
+    title_result = MagicMock()
+    title_result.scalars.return_value.all.return_value = []
+
+    semantic_result = MagicMock()
+    semantic_result.all.return_value = [
         (accepted, 0.55),
         (rejected, 0.56),
     ]
 
     db = AsyncMock()
-    db.execute.return_value = result
+    text_result = MagicMock()
+    text_result.all.return_value = []
+
+    db.execute.side_effect = [
+        title_result,
+        text_result,
+        semantic_result,
+    ]
 
     with patch(
         "app.services.search.generate_embedding",
