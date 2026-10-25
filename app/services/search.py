@@ -57,6 +57,7 @@ async def search_documents(
 
 
 
+
 async def search_document_chunks(
     query: str,
     db: AsyncSession,
@@ -76,7 +77,7 @@ async def search_document_chunks(
         )
         .where(DocumentChunk.embedding.is_not(None))
         .order_by(distance)
-        .limit(limit * 5)
+        .limit(limit * 10)
     )
 
     result = await db.execute(statement)

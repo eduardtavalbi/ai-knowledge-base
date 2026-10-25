@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
-from google.genai.errors import ServerError
+from google.genai.errors import ServerError, ClientError
 
 from app.db.session import get_db
 from app.models.document import  Document
@@ -267,16 +267,34 @@ async def ask_question(
         for chunk in chunks
     )
 
+    
     try:
         answer = await generate_answer(
             question=question,
             context=context,
         )
-    except ServerError:
+    except ClientError as exc:
+        if exc.code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Исчерпан лимит запросов Gemini API. "
+                    "Попробуйте после восстановления квоты."
+                ),
+            ) from exc
+
+        raise HTTPException(
+            status_code=502,
+            detail="AI service rejected the request.",
+        ) from exc
+
+    except ServerError as exc:
+        print(f"Gemini ServerError: {exc!r}")
         raise HTTPException(
             status_code=503,
             detail="AI service is temporarily unavailable. Please try again later.",
-    )
+        ) from exc
+
     return AskResponse(
         answer=answer,
         sources=chunks,
