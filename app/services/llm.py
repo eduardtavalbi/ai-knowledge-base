@@ -8,7 +8,13 @@ from google.genai.errors import ServerError
 from app.core.config import settings
 
 
-client = genai.Client(api_key=settings.gemini_api_key)
+def get_gemini_client():
+    if not settings.gemini_api_key:
+        raise RuntimeError("GEMINI_API_KEY is not configured")
+    return genai.Client(api_key=settings.gemini_api_key)
+
+
+client = get_gemini_client()
 
 
 async def generate_answer(question: str, context: str) -> str:
