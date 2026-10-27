@@ -31,6 +31,16 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 | Testing | pytest, pytest-asyncio, HTTPX |
 | Infrastructure | Docker, Docker Compose |
 
+## Screenshots
+
+### Main Interface
+
+![Mindbase main interface](screenshots/home.png)
+
+### API Documentation
+
+![FastAPI interactive documentation](screenshots/api-docs.png)
+
 ## Architecture
 
 ```text
