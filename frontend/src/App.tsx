@@ -17,6 +17,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import './App.css'
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
 
 type DocumentItem = {
   id: number
@@ -82,7 +83,7 @@ function App() {
 
   async function loadDocuments() {
     try {
-      const response = await fetch('http://127.0.0.1:8000/documents/')
+      const response = await fetch(`${API_URL}/documents/`)
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
@@ -111,7 +112,7 @@ function App() {
     setResults([])
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/documents/ask', {
+      const response = await fetch(`${API_URL}/documents/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -161,7 +162,7 @@ function App() {
     formData.append('file', file)
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/documents/upload', {
+      const response = await fetch(`${API_URL}/documents/upload`, {
         method: 'POST',
         body: formData,
       })
@@ -193,7 +194,7 @@ function App() {
 
   try {
     const response = await fetch(
-      `http://127.0.0.1:8000/documents/${document.id}`,
+      `${API_URL}/documents/${document.id}`,
       { method: 'DELETE' },
     )
 
@@ -233,7 +234,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/${editingDocument.id}`,
+        `${API_URL}/documents/${editingDocument.id}`,
         {
           method: 'PUT',
           headers: {
@@ -247,7 +248,11 @@ function App() {
       )
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        const errorData = await response.json().catch(() => null)
+
+        throw new Error(
+          errorData?.detail || `Ошибка сервера: ${response.status}`,
+        )
       }
 
       const updatedDocument: DocumentItem = await response.json()
@@ -267,7 +272,7 @@ function App() {
       if (query.trim()) {
         try {
           const searchResponse = await fetch(
-            `http://127.0.0.1:8000/documents/search?q=${encodeURIComponent(query)}&limit=10`,
+            `${API_URL}/documents/search?q=${encodeURIComponent(query)}&limit=10`,
           )
 
           if (searchResponse.ok) {
@@ -284,7 +289,11 @@ function App() {
       setMessage('Документ успешно обновлён.')
     } catch (error) {
       console.error('Ошибка обновления документа:', error)
-      setMessage('Не удалось сохранить изменения.')
+      setMessage(
+        error instanceof Error
+          ? `Не удалось сохранить изменения: ${error.message}`
+          : 'Не удалось сохранить изменения.',
+      )
     } finally {
       setSavingEdit(false)
     }

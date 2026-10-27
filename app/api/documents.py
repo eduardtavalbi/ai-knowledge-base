@@ -112,6 +112,11 @@ async def update_document(
             status_code=404,
             detail="Document not found",
         )
+    if not document_data.content.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Document content cannot be empty",
+        )
 
     document.title = document_data.title
     document.content = document_data.content
