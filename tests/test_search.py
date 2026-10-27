@@ -128,3 +128,61 @@ async def test_search_documents_returns_empty_list():
         )
 
     assert documents == []
+
+
+@pytest.mark.asyncio
+async def test_search_documents_prioritizes_title_matches():
+    document = make_document(1, "Python и FastAPI")
+
+    title_result = MagicMock()
+    title_result.scalars.return_value.all.return_value = [document]
+
+    db = AsyncMock()
+    db.execute.return_value = title_result
+
+    with patch(
+        "app.services.search.generate_embedding",
+    ) as mock_embedding:
+        documents = await search_documents(
+            query="Python",
+            db=db,
+            limit=1,
+        )
+
+    assert len(documents) == 1
+    assert documents[0]["id"] == 1
+    assert documents[0]["title"] == "Python и FastAPI"
+    assert documents[0]["score"] == 1.0
+
+    db.execute.assert_awaited_once()
+    mock_embedding.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_search_documents_returns_full_text_matches_without_semantic_search():
+    document = make_document(2, "Python и тестирование")
+
+    title_result = MagicMock()
+    title_result.scalars.return_value.all.return_value = []
+
+    text_result = MagicMock()
+    text_result.all.return_value = [(document, 0.1)]
+
+    db = AsyncMock()
+    db.execute.side_effect = [title_result, text_result]
+
+    with patch(
+        "app.services.search.generate_embedding",
+    ) as mock_embedding:
+        documents = await search_documents(
+            query="автоматическое тестирование",
+            db=db,
+            limit=5,
+        )
+
+    assert len(documents) == 1
+    assert documents[0]["id"] == 2
+    assert documents[0]["score"] == pytest.approx(0.1)
+
+    assert db.execute.await_count == 2
+    mock_embedding.assert_not_called()

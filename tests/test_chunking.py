@@ -38,3 +38,11 @@ def test_whitespace_is_normalized():
 def test_invalid_parameters_raise_value_error(chunk_size, overlap):
     with pytest.raises(ValueError):
         split_text("some text", chunk_size, overlap)
+
+def test_long_text_chunks_cover_entire_text():
+    text = "0123456789" * 120
+    chunks = split_text(text, chunk_size=500, overlap=100)
+
+    assert chunks[0] == text[:500]
+    assert chunks[1] == text[400:900]
+    assert chunks[-1] == text[-400:]
