@@ -1,53 +1,76 @@
-# AI Knowledge Base
+# Mindbase — AI Knowledge Base
 
-An AI-powered knowledge base with semantic search, built with FastAPI, PostgreSQL, pgvector, and React.
+An AI-powered knowledge base that helps users organize documents, search for relevant information, and get answers based on their own knowledge base.
 
-The project allows users to create and manage text documents, upload files, and find relevant information using natural-language queries rather than exact keyword matches.
+Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project combines document management, text embeddings, hybrid search, and retrieval-augmented generation (RAG).
 
 ## Features
 
-- Create, retrieve, update, and delete documents
-- Upload `.txt` and `.md` files
-- Semantic search using multilingual text embeddings
-- Similarity scores for search results
-- PostgreSQL storage with pgvector
-- Asynchronous API and database access
-- Database migrations with Alembic
-- React and TypeScript frontend
-- Automated API tests with pytest
-- Docker Compose development environment
+- **Document management** — create, view, update, and delete documents.
+- **File uploads** — import `.txt` and `.md` files with UTF-8 validation and a 2 MB size limit.
+- **Hybrid search** — combines title matching, PostgreSQL full-text search, and semantic search as a fallback.
+- **Semantic search** — represents text with multilingual embeddings and uses pgvector cosine distance to find relevant content.
+- **RAG-based question answering** — retrieves relevant document chunks and passes them as context to Google Gemini.
+- **Source references** — returns the document chunks used to generate an answer.
+- **Relevance filtering** — filters out low-scoring semantic search results and limits duplicate or overly concentrated chunks.
+- **Asynchronous backend** — uses FastAPI and SQLAlchemy's async API.
+- **Database migrations** — manages schema changes with Alembic.
+- **Automated tests** — tests the API and application behavior with pytest.
+- **Docker Compose** — provides a containerized development environment for the backend and database.
 
 ## Tech Stack
 
-**Backend**
-- Python
-- FastAPI
-- SQLAlchemy (async)
-- Pydantic
-- Sentence Transformers
-
-**Database and infrastructure**
-- PostgreSQL
-- pgvector
-- Alembic
-- Docker Compose
-
-**Frontend**
-- React
-- TypeScript
-- Vite
-
-**Testing**
-- pytest
-- FastAPI TestClient
+| Area | Technologies |
+|---|---|
+| Backend | Python, FastAPI, SQLAlchemy, Pydantic |
+| Database | PostgreSQL, pgvector |
+| Embeddings | Sentence Transformers |
+| AI generation | Google Gemini API |
+| Frontend | React, TypeScript, Vite |
+| Migrations | Alembic |
+| Testing | pytest, pytest-asyncio, HTTPX |
+| Infrastructure | Docker, Docker Compose |
 
 ## Architecture
 
-1. Users create documents through the web interface or API.
-2. Documents are stored in PostgreSQL.
-3. Text embeddings represent the semantic meaning of document content.
-4. A search query is converted into an embedding using the same embedding model.
-5. pgvector ranks documents by cosine distance, and the API returns relevant results with similarity scores.
+```text
+                    ┌──────────────────────┐
+                    │   React + TypeScript │
+                    │      Frontend        │
+                    └──────────┬───────────┘
+                               │ HTTP / REST
+                    ┌──────────▼───────────┐
+                    │       FastAPI        │
+                    │      REST API        │
+                    └──────────┬───────────┘
+                               │
+                 ┌─────────────┴─────────────┐
+                 │                           │
+       ┌─────────▼─────────┐      ┌──────────▼──────────┐
+       │ Document Services │      │    Search / RAG     │
+       │ Chunking, Storage │      │ Retrieval, Context  │
+       └─────────┬─────────┘      └──────────┬──────────┘
+                 │                           │
+       ┌─────────▼───────────────────────────▼──────────┐
+       │             PostgreSQL + pgvector              │
+       │           Documents, Chunks, Embeddings        │
+       └────────────────────────────────────────────────┘
+                                               │
+                                    ┌──────────▼──────────┐
+                                    │    Google Gemini    │
+                                    │   Answer Generation │
+                                    └─────────────────────┘
+```
+
+### Search workflow
+
+1. A user submits a natural-language query.
+2. The application first checks for title matches.
+3. If no results are found, PostgreSQL full-text search is used.
+4. If that also returns no results, semantic search ranks document chunks by cosine distance.
+5. For question answering, the most relevant chunks are combined into context.
+6. Google Gemini generates an answer based on that context.
+7. The API returns the answer and its source chunks.
 
 ## Getting Started
 
@@ -57,6 +80,7 @@ The project allows users to create and manage text documents, upload files, and 
 - Node.js and npm
 - Docker Desktop with Docker Compose
 - Git
+- A Google Gemini API key for AI-powered answers
 
 ### 1. Clone the repository
 
@@ -67,19 +91,34 @@ cd ai-knowledge-base
 
 ### 2. Configure environment variables
 
-Create a local `.env` file based on `.env.example`:
+Create a local environment file from the example:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Update the database credentials and connection URL in `.env` to match your local setup. Do not commit `.env` or real credentials.
+Configure the following variables in `.env`:
+
+```dotenv
+APP_NAME=AI Knowledge Base API
+DEBUG=false
+DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5434/knowledge_base
+POSTGRES_DB=knowledge_base
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=YOUR_PASSWORD
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+Use your own credentials. Never commit `.env` or API keys.
 
 ### 3. Start the database
 
 ```powershell
 docker compose up -d db
 ```
+
+The database is exposed on port `5434` on the host. The Compose configuration uses an external Docker volume named `ai_knowledge_base_vector_data`; make sure this volume exists before starting the database.
 
 ### 4. Set up the Python environment
 
@@ -94,6 +133,7 @@ pip install -r requirements.txt
 ```powershell
 python -m alembic upgrade head
 ```
+Alembic uses the database connection configured in alembic.ini. Make sure its URL points to your local PostgreSQL instance before running migrations.
 
 ### 6. Start the backend
 
@@ -119,6 +159,8 @@ Open the local URL printed by Vite, usually:
 
 http://localhost:5173
 
+If needed, configure `VITE_API_URL` in `frontend/.env.local` to point to the backend URL.
+
 ## Running Tests
 
 From the project root, with the virtual environment activated:
@@ -127,46 +169,21 @@ From the project root, with the virtual environment activated:
 python -m pytest -v
 ```
 
-## API Examples
+## API Overview
 
-### Create a document
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/documents/` | List documents |
+| `POST` | `/documents/` | Create a document |
+| `GET` | `/documents/{id}` | Retrieve a document |
+| `PUT` | `/documents/{id}` | Update a document |
+| `DELETE` | `/documents/{id}` | Delete a document |
+| `POST` | `/documents/upload` | Upload a `.txt` or `.md` file |
+| `GET` | `/documents/search?q=...` | Search documents |
+| `GET` | `/documents/search/chunks?q=...` | Search document chunks |
+| `POST` | `/documents/ask` | Answer a question using retrieved context |
 
-`POST /documents/`
-
-Request:
-
-```json
-{
-  "title": "Python Learning Guide",
-  "content": "Python is used for backend development, automation, and artificial intelligence."
-}
-```
-
-Example response:
-
-```json
-{
-  "id": 1,
-  "title": "Python Learning Guide",
-  "content": "Python is used for backend development, automation, and artificial intelligence."
-}
-```
-
-The returned ID is generated by the database.
-
-### Search documents
-
-`GET /documents/search?q=How%20to%20develop%20server-side%20applications&limit=5`
-
-Example:
-
-```bash
-curl -G "http://127.0.0.1:8000/documents/search" \
-  --data-urlencode "q=How to develop server-side applications" \
-  --data-urlencode "limit=5"
-```
-
-Search results include document information and a similarity score. Results are filtered by a configurable-in-code relevance threshold.
+See the interactive API documentation at `/docs` for request schemas and response formats.
 
 ## Project Structure
 
@@ -190,10 +207,10 @@ ai-knowledge-base/
 
 ## Project Status
 
-This project is under active development. Planned improvements include stronger search evaluation, additional tests, and further frontend enhancements.
+Mindbase is an ongoing personal project focused on backend development, semantic retrieval, and AI-powered knowledge management.
 
-## Security
+## Security Notes
 
-- Keep secrets in `.env`.
-- Use `.env.example` only as a template.
-- Never commit database backups, credentials, or API keys.
+- Keep API keys and credentials in local environment files.
+- Do not commit `.env`, database backups, or other sensitive files.
+- Use `.env.example` as a template with placeholder values only.
