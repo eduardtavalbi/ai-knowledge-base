@@ -45,22 +45,42 @@ class InvalidSourceCitationError(ValueError):
     """Raised when the model cites a source that is absent from its context."""
 
 
+def extract_source_citations(answer: str) -> set[int]:
+    """Return the numbered source IDs explicitly cited in an answer."""
+    markers = re.findall(r"\[Источник:[^\]]*\]", answer)
+    source_ids: set[int] = set()
+
+    for marker in markers:
+        match = re.fullmatch(r"\[Источник:\s*(\d+)\s*\]", marker)
+        if match is None:
+            raise InvalidSourceCitationError(
+                f"Model returned an invalid source citation: {marker}"
+            )
+        source_ids.add(int(match.group(1)))
+
+    return source_ids
+
+
 def validate_source_citations(answer: str, context: str) -> str:
-    """Reject citation markers that do not map to a numbered context source."""
+    """Require citations and reject markers absent from the numbered context."""
     available_sources = {
         int(source_id)
         for source_id in re.findall(
             r"(?m)^\[Источник:\s*(\d+)\]\s*$", context
         )
     }
-    citation_markers = re.findall(r"\[Источник:[^\]]*\]", answer)
+    cited_sources = extract_source_citations(answer)
 
-    for marker in citation_markers:
-        match = re.fullmatch(r"\[Источник:\s*(\d+)\s*\]", marker)
-        if match is None or int(match.group(1)) not in available_sources:
-            raise InvalidSourceCitationError(
-                f"Model returned an unknown source citation: {marker}"
-            )
+    if available_sources and not cited_sources:
+        raise InvalidSourceCitationError(
+            "Model returned an answer without source citations"
+        )
+
+    unknown_sources = cited_sources - available_sources
+    if unknown_sources:
+        raise InvalidSourceCitationError(
+            "Model returned a citation to an unknown source"
+        )
 
     return answer
 
