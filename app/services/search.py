@@ -8,6 +8,17 @@ from app.models.document_chunk import DocumentChunk
 from app.services.embeddings import generate_embedding
 
 
+_NEGATION_PATTERN = re.compile(
+    r"\\b(?:not|no|never|without|cannot|can't|не|нет|ни|никогда|без)\\b",
+    re.IGNORECASE,
+)
+
+
+def _negation_signature(text: str) -> frozenset[str]:
+    """Return explicit negation markers so contradictory text is not deduplicated."""
+    return frozenset(match.group(0).lower() for match in _NEGATION_PATTERN.finditer(text))
+
+
 
 
 
@@ -244,8 +255,10 @@ async def search_document_chunks(
         if len(existing_chunks) >= max_chunks_per_document:
             continue
 
+        current_negation = _negation_signature(normalized_content)
         is_duplicate = any(
-            SequenceMatcher(
+            current_negation == _negation_signature(existing_content)
+            and SequenceMatcher(
                 None,
                 normalized_content,
                 existing_content,
