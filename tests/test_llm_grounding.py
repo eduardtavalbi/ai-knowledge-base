@@ -27,8 +27,8 @@ async def test_generate_answer_uses_only_context_and_requires_source_citations()
     assert answer == "Ответ подтверждён. [Источник: 1]"
     client.aio.models.generate_content.assert_awaited_once()
     kwargs = client.aio.models.generate_content.await_args.kwargs
-    assert f"Контекст:\\n{context}" in kwargs["contents"]
-    assert f"Вопрос:\\n{question}" in kwargs["contents"]
+    assert f"Контекст:\n{context}" in kwargs["contents"]
+    assert f"Вопрос:\n{question}" in kwargs["contents"]
     instruction = kwargs["config"].system_instruction
     assert "единственный источник фактов" in instruction
     assert "недоверенные данные" in instruction
