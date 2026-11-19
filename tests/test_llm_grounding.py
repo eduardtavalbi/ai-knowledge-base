@@ -46,3 +46,36 @@ async def test_generate_answer_rejects_empty_model_response():
     with patch("app.services.llm.get_gemini_client", return_value=client):
         with pytest.raises(RuntimeError, match="empty answer"):
             await generate_answer("Вопрос", "[Источник: 1] Данные")
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_rejects_citation_to_unknown_source():
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        return_value=SimpleNamespace(text="Ответ. [Источник: 2]")
+    )
+    context = "[Источник: 1]\\nСодержимое: проверенный факт."
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        with pytest.raises(ValueError, match="unknown source citation"):
+            await generate_answer("Вопрос", context)
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_accepts_citations_present_in_context():
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        return_value=SimpleNamespace(
+            text="Первый факт [Источник: 1]. Второй факт [Источник: 2]."
+        )
+    )
+    context = (
+        "[Источник: 1]\\nПервый фрагмент.\\n\\n"
+        "[Источник: 2]\\nВторой фрагмент."
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        answer = await generate_answer("Вопрос", context)
+
+    assert "[Источник: 1]" in answer
+    assert "[Источник: 2]" in answer
