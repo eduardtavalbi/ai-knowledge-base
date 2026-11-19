@@ -1,5 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, patch
+from sqlalchemy import select
+
+from app.models.document_chunk import DocumentChunk
+from tests.conftest import TestingSessionLocal
 
 @pytest.mark.asyncio
 async def test_create_document(client):
@@ -523,3 +527,85 @@ async def test_upload_invalid_pdf_is_rejected(client):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Could not read the PDF file"
+
+
+@pytest.mark.asyncio
+async def test_update_replaces_old_chunks_and_clears_source_metadata(client):
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch("app.services.chunk_storage.generate_embedding", return_value=[0.0] * 384),
+    ):
+        uploaded = await client.post(
+            "/documents/upload",
+            files={
+                "file": (
+                    "policy.md",
+                    b"# Old section\\n\\nOld searchable policy content.",
+                    "text/markdown",
+                )
+            },
+        )
+        assert uploaded.status_code == 201
+        document_id = uploaded.json()["id"]
+
+        async with TestingSessionLocal() as db:
+            before = (await db.execute(
+                select(DocumentChunk).where(DocumentChunk.document_id == document_id)
+            )).scalars().all()
+            assert before
+            assert any(chunk.source_section == "Old section" for chunk in before)
+            old_chunk_ids = {chunk.id for chunk in before}
+
+        updated = await client.put(
+            f"/documents/{document_id}",
+            json={
+                "title": "Updated policy",
+                "content": "Completely new plain text content.",
+            },
+        )
+
+    assert updated.status_code == 200
+    async with TestingSessionLocal() as db:
+        after = (await db.execute(
+            select(DocumentChunk).where(DocumentChunk.document_id == document_id)
+        )).scalars().all()
+
+    assert after
+    assert old_chunk_ids.isdisjoint({chunk.id for chunk in after})
+    assert all(chunk.source_page is None for chunk in after)
+    assert all(chunk.source_section is None for chunk in after)
+    assert all("Old searchable policy content" not in chunk.content for chunk in after)
+    assert any("Completely new plain text content" in chunk.content for chunk in after)
+
+
+@pytest.mark.asyncio
+async def test_delete_document_also_deletes_its_chunks(client):
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch("app.services.chunk_storage.generate_embedding", return_value=[0.0] * 384),
+    ):
+        created = await client.post(
+            "/documents/",
+            json={
+                "title": "Document with chunks",
+                "content": "Content that must disappear with its document.",
+            },
+        )
+        assert created.status_code == 201
+        document_id = created.json()["id"]
+
+        async with TestingSessionLocal() as db:
+            before = (await db.execute(
+                select(DocumentChunk).where(DocumentChunk.document_id == document_id)
+            )).scalars().all()
+            assert before
+
+        deleted = await client.delete(f"/documents/{document_id}")
+
+    assert deleted.status_code == 200
+    async with TestingSessionLocal() as db:
+        remaining = (await db.execute(
+            select(DocumentChunk).where(DocumentChunk.document_id == document_id)
+        )).scalars().all()
+
+    assert remaining == []
