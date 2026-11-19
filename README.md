@@ -118,7 +118,7 @@ POSTGRES_DB=knowledge_base
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=YOUR_PASSWORD
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
 Use your own credentials. Never commit `.env` or API keys.
