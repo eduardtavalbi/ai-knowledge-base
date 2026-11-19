@@ -19,6 +19,12 @@ from app.schemas.document import (DocumentCreate, DocumentResponse,
                                   DocumentUpdate, SearchResultResponse,
                                   ChunkSearchResult, AskRequest, AskResponse)
 from app.services.chunk_storage import save_document_chunks
+from app.services.document_extraction import (
+    extract_document_text,
+    UnsupportedDocumentFormatError,
+    InvalidDocumentFileError,
+    EmptyDocumentError,
+)
 from app.services.llm import (
     generate_answer,
     InvalidSourceCitationError,
@@ -261,11 +267,6 @@ async def upload_document(
             detail="Filename is reqiered"
         )
 
-    if not file.filename.lower().endswith((".txt",".md")):
-        raise HTTPException(
-            status_code=400,
-            detail="Only .txt and .md files are supported"
-        )
     max_size = 2 * 1024 * 1024
     content_bytes = await file.read(max_size + 1)
 
@@ -275,24 +276,30 @@ async def upload_document(
             detail="File is too large. Maximum size is 2 MB",
         )
 
-
     try:
-        content = content_bytes.decode("utf-8")
-    except UnicodeDecodeError:
+        extracted_content = extract_document_text(
+            filename=file.filename,
+            content=content_bytes,
+        )
+    except UnsupportedDocumentFormatError as exc:
         raise HTTPException(
             status_code=400,
-            detail="File must use UTF-8 encoding"
-        )
-
-    if not content.strip():
+            detail="Only .txt, .md, .pdf and .docx files are supported",
+        ) from exc
+    except InvalidDocumentFileError as exc:
         raise HTTPException(
             status_code=400,
-            detail="File cannot be empty"
-        )
+            detail=str(exc),
+        ) from exc
+    except EmptyDocumentError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
     document, created = await _create_document_if_new(
         title=file.filename,
-        content=content,
+        content=extracted_content,
         db=db,
     )
     response.status_code = 201 if created else 200
