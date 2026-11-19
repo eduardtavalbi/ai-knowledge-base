@@ -20,13 +20,13 @@ def validate_source_citations(answer: str, context: str) -> str:
     available_sources = {
         int(source_id)
         for source_id in re.findall(
-            r"(?m)^\\[Источник:\\s*(\\d+)\\]\\s*$", context
+            r"(?m)^\[Источник:\s*(\d+)\]\s*$", context
         )
     }
-    citation_markers = re.findall(r"\\[Источник:[^\\]]*\\]", answer)
+    citation_markers = re.findall(r"\[Источник:[^\]]*\]", answer)
 
     for marker in citation_markers:
-        match = re.fullmatch(r"\\[Источник:\\s*(\\d+)\\s*\\]", marker)
+        match = re.fullmatch(r"\[Источник:\s*(\d+)\s*\]", marker)
         if match is None or int(match.group(1)) not in available_sources:
             raise InvalidSourceCitationError(
                 f"Model returned an unknown source citation: {marker}"
