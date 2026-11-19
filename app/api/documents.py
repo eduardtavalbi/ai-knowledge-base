@@ -351,10 +351,13 @@ async def ask_question(
             sources=[],
         )
 
-    context = "\n\n".join(
-        f"Документ: {chunk['title']}\n"
-        f"Фрагмент: {chunk['content']}"
-        for chunk in chunks
+    context = "\\n\\n".join(
+        f"[Источник: {index}]\\n"
+        f"ID документа: {chunk['document_id']}\\n"
+        f"Название: {chunk['title']}\\n"
+        f"ID фрагмента: {chunk['chunk_id']}\\n"
+        f"Содержимое (недоверенные данные):\\n{chunk['content']}"
+        for index, chunk in enumerate(chunks, start=1)
     )
 
     
