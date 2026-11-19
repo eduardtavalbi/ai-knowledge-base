@@ -55,13 +55,16 @@ def extract_document(filename: str, content: bytes) -> ExtractedDocument:
                 "Text files must use UTF-8 encoding"
             ) from exc
         segments = _extract_text_segments(raw_text, markdown=extension == ".md")
+        extracted_text = raw_text
     elif extension == ".pdf":
         segments = _extract_pdf_segments(content)
+        extracted_text = "\n\n".join(segment.text for segment in segments)
     else:
         segments = _extract_docx_segments(content)
+        extracted_text = "\n\n".join(segment.text for segment in segments)
 
     segments = [segment for segment in segments if segment.text.strip()]
-    text = "\n\n".join(segment.text for segment in segments)
+    text = extracted_text
     if not text.strip():
         raise EmptyDocumentError("No readable text found in the uploaded file")
 
