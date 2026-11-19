@@ -184,6 +184,11 @@ async def delete_documents(
             detail="Document not found"
         )
 
+    # Delete chunks explicitly instead of relying only on database-level
+    # ON DELETE CASCADE, which may not be enabled by every test/development DB.
+    await db.execute(
+        delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
+    )
     await db.delete(document)
     await db.commit()
 
