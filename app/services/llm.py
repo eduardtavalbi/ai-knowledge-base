@@ -1,5 +1,7 @@
 
 import asyncio
+import logging
+import re
 
 from google import genai
 from google.genai import types
@@ -48,3 +50,53 @@ async def generate_answer(question: str, context: str) -> str:
             await asyncio.sleep(attempt + 1)
 
     raise RuntimeError("Failed to generate answer")
+
+
+
+async def expand_search_queries(
+    query: str,
+    max_queries: int = 3,
+) -> list[str]:
+    """Generate a small set of search formulations, falling back safely."""
+    original = query.strip()
+    if not original or max_queries <= 1:
+        return [original] if original else []
+
+    try:
+        client = get_gemini_client()
+        response = await client.aio.models.generate_content(
+            model=settings.gemini_model,
+            contents=(
+                "Сформулируй до двух коротких альтернативных поисковых "
+                "запросов для поиска в базе знаний. Сохрани исходный смысл, "
+                "не отвечай на вопрос и не добавляй факты. Каждый вариант "
+                "выведи с новой строки, без пояснений.\n\n"
+                f"Исходный запрос: {original}"
+            ),
+            config=types.GenerateContentConfig(
+                system_instruction=(
+                    "Ты преобразуешь поисковые запросы. Верни только "
+                    "альтернативные формулировки, по одной на строку."
+                ),
+                temperature=0.1,
+            ),
+        )
+
+        candidates = [original]
+        for line in (response.text or "").splitlines():
+            candidate = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip()
+            candidate = candidate.strip("\"' ")
+            if (
+                candidate
+                and candidate.casefold() not in {
+                    item.casefold() for item in candidates
+                }
+            ):
+                candidates.append(candidate)
+            if len(candidates) >= max_queries:
+                break
+
+        return candidates
+    except Exception:
+        logging.exception("Search query expansion failed; using original query")
+        return [original]
