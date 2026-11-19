@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import re
+from difflib import SequenceMatcher
 
 from google import genai
 from google.genai import types
@@ -86,12 +87,14 @@ async def expand_search_queries(
         for line in (response.text or "").splitlines():
             candidate = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip()
             candidate = candidate.strip("\"' ")
-            if (
-                candidate
-                and candidate.casefold() not in {
-                    item.casefold() for item in candidates
-                }
-            ):
+            is_duplicate = any(
+                candidate.casefold() == item.casefold()
+                or SequenceMatcher(
+                    None, candidate.casefold(), item.casefold()
+                ).ratio() >= 0.85
+                for item in candidates
+            )
+            if candidate and not is_duplicate:
                 candidates.append(candidate)
             if len(candidates) >= max_queries:
                 break
