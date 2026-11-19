@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from io import BytesIO
 from zipfile import BadZipFile
 
 from docx import Document as DocxDocument
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
@@ -20,11 +24,24 @@ class EmptyDocumentError(ValueError):
     pass
 
 
+@dataclass(frozen=True)
+class SourceSegment:
+    text: str
+    page_number: int | None = None
+    section_title: str | None = None
+
+
+@dataclass(frozen=True)
+class ExtractedDocument:
+    text: str
+    segments: list[SourceSegment]
+
+
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf", ".docx"}
 
 
-def extract_document_text(filename: str, content: bytes) -> str:
-    """Extract UTF-8 text from supported knowledge-base upload formats."""
+def extract_document(filename: str, content: bytes) -> ExtractedDocument:
+    """Extract text and retain page/section metadata for later RAG citations."""
     extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
     if extension not in SUPPORTED_EXTENSIONS:
@@ -32,48 +49,95 @@ def extract_document_text(filename: str, content: bytes) -> str:
 
     if extension in {".txt", ".md"}:
         try:
-            text = content.decode("utf-8")
+            raw_text = content.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise InvalidDocumentFileError(
                 "Text files must use UTF-8 encoding"
             ) from exc
+        segments = _extract_text_segments(raw_text, markdown=extension == ".md")
     elif extension == ".pdf":
-        text = _extract_pdf_text(content)
+        segments = _extract_pdf_segments(content)
     else:
-        text = _extract_docx_text(content)
+        segments = _extract_docx_segments(content)
 
+    segments = [segment for segment in segments if segment.text.strip()]
+    text = "\n\n".join(segment.text for segment in segments)
     if not text.strip():
         raise EmptyDocumentError("No readable text found in the uploaded file")
 
-    return text
+    return ExtractedDocument(text=text, segments=segments)
 
 
-def _extract_pdf_text(content: bytes) -> str:
+def extract_document_text(filename: str, content: bytes) -> str:
+    """Backward-compatible text-only extraction helper."""
+    return extract_document(filename, content).text
+
+
+def _extract_text_segments(
+    text: str,
+    *,
+    markdown: bool = False,
+) -> list[SourceSegment]:
+    segments: list[SourceSegment] = []
+    current_section: str | None = None
+
+    for block in re.split(r"\n\s*\n", text):
+        block = block.strip()
+        if not block:
+            continue
+        if markdown:
+            heading = re.match(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$", block)
+            if heading:
+                current_section = heading.group(1).strip()
+        segments.append(SourceSegment(text=block, section_title=current_section))
+
+    return segments
+
+
+def _extract_pdf_segments(content: bytes) -> list[SourceSegment]:
     try:
         reader = PdfReader(BytesIO(content), strict=False)
-        if reader.is_encrypted:
-            if not reader.decrypt(""):
-                raise InvalidDocumentFileError(
-                    "Password-protected PDF files are not supported"
-                )
-        return "\n\n".join(
-            page.extract_text() or "" for page in reader.pages
-        )
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise InvalidDocumentFileError(
+                "Password-protected PDF files are not supported"
+            )
+        return [
+            SourceSegment(text=page.extract_text() or "", page_number=page_number)
+            for page_number, page in enumerate(reader.pages, start=1)
+        ]
     except InvalidDocumentFileError:
         raise
     except (PdfReadError, EOFError, ValueError, OSError) as exc:
         raise InvalidDocumentFileError("Could not read the PDF file") from exc
 
 
-def _extract_docx_text(content: bytes) -> str:
+def _extract_docx_segments(content: bytes) -> list[SourceSegment]:
     try:
         document = DocxDocument(BytesIO(content))
-    except (BadZipFile, KeyError, ValueError, OSError) as exc:
+    except Exception as exc:
+        # python-docx may raise PackageNotFoundError as well as ZIP/parser errors.
         raise InvalidDocumentFileError("Could not read the DOCX file") from exc
 
-    parts = [paragraph.text for paragraph in document.paragraphs]
-    for table in document.tables:
-        for row in table.rows:
-            parts.append(" | ".join(cell.text for cell in row.cells))
+    segments: list[SourceSegment] = []
+    current_section: str | None = None
 
-    return "\n".join(part for part in parts if part.strip())
+    for block in document.iter_inner_content():
+        if isinstance(block, Paragraph):
+            text = block.text.strip()
+            if not text:
+                continue
+            style_name = block.style.name if block.style is not None else ""
+            if style_name.startswith("Heading"):
+                current_section = text
+            segments.append(
+                SourceSegment(text=text, section_title=current_section)
+            )
+        elif isinstance(block, Table):
+            for row in block.rows:
+                text = " | ".join(cell.text.strip() for cell in row.cells).strip()
+                if text:
+                    segments.append(
+                        SourceSegment(text=text, section_title=current_section)
+                    )
+
+    return segments
