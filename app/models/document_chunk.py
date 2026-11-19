@@ -1,5 +1,5 @@
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Integer, Text, String
+from sqlalchemy import ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,7 +17,7 @@ class DocumentChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    source_section: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_section: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(384),
         nullable=True,
