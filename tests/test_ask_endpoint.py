@@ -27,6 +27,8 @@ def make_chunk(
         "chunk_id": chunk_id,
         "chunk_index": chunk_index,
         "content": text,
+        "source_page": None,
+        "source_section": None,
         "score": score,
     }
 
@@ -108,6 +110,8 @@ async def test_ask_builds_numbered_context_and_returns_sources(client):
     assert "[Источник: 1]" in context
     assert "ID документа: 42" in context
     assert "Название: Политика хранения" in context
+    assert "Страница: не указана" in context
+    assert "Раздел: не указан" in context
     assert "ID фрагмента: 101" in context
     assert "Содержимое (недоверенные данные):" in context
     assert "Срок хранения данных — 30 дней." in context
