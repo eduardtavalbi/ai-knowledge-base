@@ -20,6 +20,8 @@ def make_chunk(
     chunk_index: int = 0,
     text: str = "Срок хранения данных — 30 дней.",
     score: float = 0.92,
+    source_page: int | None = None,
+    source_section: str | None = None,
 ):
     return {
         "document_id": document_id,
@@ -27,8 +29,8 @@ def make_chunk(
         "chunk_id": chunk_id,
         "chunk_index": chunk_index,
         "content": text,
-        "source_page": None,
-        "source_section": None,
+        "source_page": source_page,
+        "source_section": source_section,
         "score": score,
     }
 
@@ -66,7 +68,10 @@ async def test_ask_returns_insufficient_information_without_calling_llm(client):
 @pytest.mark.asyncio
 async def test_ask_builds_numbered_context_and_returns_sources(client):
     chunks = [
-        make_chunk(),
+        make_chunk(
+            source_page=4,
+            source_section="Политика хранения данных",
+        ),
         make_chunk(
             document_id=7,
             title="Регламент безопасности",
@@ -98,6 +103,8 @@ async def test_ask_builds_numbered_context_and_returns_sources(client):
     body = response.json()
     assert body["answer"] == "Данные хранятся 30 дней. [Источник: 1]"
     assert body["sources"] == chunks
+    assert body["sources"][0]["source_page"] == 4
+    assert body["sources"][0]["source_section"] == "Политика хранения данных"
 
     search.assert_awaited_once()
     assert search.await_args.kwargs["query"] == "Каков срок хранения?"
@@ -110,13 +117,15 @@ async def test_ask_builds_numbered_context_and_returns_sources(client):
     assert "[Источник: 1]" in context
     assert "ID документа: 42" in context
     assert "Название: Политика хранения" in context
-    assert "Страница: не указана" in context
-    assert "Раздел: не указан" in context
+    assert "Страница: 4" in context
+    assert "Раздел: Политика хранения данных" in context
     assert "ID фрагмента: 101" in context
     assert "Содержимое (недоверенные данные):" in context
     assert "Срок хранения данных — 30 дней." in context
     assert "[Источник: 2]" in context
     assert "ID документа: 7" in context
+    assert "Страница: не указана" in context
+    assert "Раздел: не указан" in context
     assert "Доступ предоставляется после согласования." in context
 
 
