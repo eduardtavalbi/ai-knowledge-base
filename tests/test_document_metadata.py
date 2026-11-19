@@ -1,5 +1,5 @@
 from io import BytesIO
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from docx import Document as WordDocument
@@ -67,7 +67,8 @@ def test_pdf_extraction_tracks_one_based_page_numbers(monkeypatch):
 @pytest.mark.asyncio
 async def test_chunk_storage_persists_source_page_and_section():
     document = Document(id=42, title="Policy", content="Vacation policy details.")
-    db = AsyncMock()
+    db = MagicMock()
+    db.flush = AsyncMock()
     source_segments = [
         SourceSegment(
             text="Vacation policy details.",
@@ -93,7 +94,8 @@ async def test_chunk_storage_persists_source_page_and_section():
 @pytest.mark.asyncio
 async def test_chunk_storage_keeps_metadata_when_combining_paragraphs():
     document = Document(id=7, title="Policy", content="First paragraph. Second paragraph.")
-    db = AsyncMock()
+    db = MagicMock()
+    db.flush = AsyncMock()
     source_segments = [
         SourceSegment("First paragraph.", page_number=2, section_title="Benefits"),
         SourceSegment("Second paragraph.", page_number=2, section_title="Benefits"),
