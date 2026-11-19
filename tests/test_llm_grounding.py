@@ -5,6 +5,7 @@ import pytest
 
 from app.services.llm import (
     generate_answer,
+    expand_search_queries,
     GeminiEmptyResponseError,
     GeminiTimeoutError,
     GeminiUnavailableError,
@@ -108,3 +109,49 @@ async def test_generate_answer_normalizes_network_errors():
     with patch("app.services.llm.get_gemini_client", return_value=client):
         with pytest.raises(GeminiUnavailableError):
             await generate_answer("Вопрос", "[Источник: 1] Данные")
+
+
+
+@pytest.mark.asyncio
+async def test_expand_search_queries_falls_back_when_gemini_is_unavailable():
+    with patch(
+        "app.services.llm.get_gemini_client",
+        side_effect=GeminiUnavailableError("provider unavailable"),
+    ):
+        queries = await expand_search_queries("Как настроить доступ?", max_queries=3)
+
+    assert queries == ["Как настроить доступ?"]
+
+
+@pytest.mark.asyncio
+async def test_expand_search_queries_ignores_empty_model_response():
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        return_value=SimpleNamespace(text="  \n")
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        queries = await expand_search_queries("Политика отпусков", max_queries=3)
+
+    assert queries == ["Политика отпусков"]
+
+
+@pytest.mark.asyncio
+async def test_expand_search_queries_deduplicates_and_respects_limit():
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        return_value=SimpleNamespace(
+            text=(
+                "- Политика отпусков\n"
+                "- правила предоставления отпуска\n"
+                "- Как оформить отпуск сотруднику"
+            )
+        )
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        queries = await expand_search_queries("Политика отпусков", max_queries=2)
+
+    assert queries[0] == "Политика отпусков"
+    assert len(queries) == 2
+    assert queries[1] == "правила предоставления отпуска"
