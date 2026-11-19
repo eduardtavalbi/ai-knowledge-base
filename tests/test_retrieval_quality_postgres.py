@@ -165,3 +165,56 @@ async def test_postgres_search_removes_duplicates_and_limits_chunks_per_document
         for item in results
     )
     assert all(item["document_id"] == handbook.id for item in results)
+
+
+@pytest.mark.asyncio
+async def test_postgres_search_supports_russian_and_english_expansions(
+    postgres_session,
+):
+    russian_doc = Document(
+        title="Политика удалённой работы",
+        content="Правила работы сотрудников из дома",
+    )
+    english_doc = Document(
+        title="Remote work policy",
+        content="Rules for employees working from home",
+    )
+    postgres_session.add_all([russian_doc, english_doc])
+    await postgres_session.flush()
+
+    russian_chunk = DocumentChunk(
+        document_id=russian_doc.id,
+        chunk_index=0,
+        content="Сотрудникам разрешена удалённая работа по согласованию.",
+        embedding=embedding(1.0),
+    )
+    english_chunk = DocumentChunk(
+        document_id=english_doc.id,
+        chunk_index=0,
+        content="Employees may work remotely with manager approval.",
+        embedding=embedding(0.0, 1.0),
+    )
+    postgres_session.add_all([russian_chunk, english_chunk])
+    await postgres_session.commit()
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=["удалённая работа", "remote work"],
+        ),
+        patch(
+            "app.services.search.generate_embedding",
+            side_effect=[embedding(1.0), embedding(0.0, 1.0)],
+        ),
+    ):
+        results = await search_document_chunks(
+            "работа из дома",
+            postgres_session,
+            limit=5,
+        )
+
+    result_ids = {item["chunk_id"] for item in results}
+    assert russian_chunk.id in result_ids
+    assert english_chunk.id in result_ids
+    assert len(results) == 2
