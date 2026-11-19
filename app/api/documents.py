@@ -1,11 +1,14 @@
+import hashlib
+
 from app.services.embeddings import generate_embedding
 from app.services.search import search_documents
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 
 
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
+from sqlalchemy.exc import IntegrityError
 
 from google.genai.errors import ServerError, ClientError
 
@@ -23,6 +26,60 @@ router = APIRouter(
     prefix="/documents",
     tags=["Documents"]
 )
+
+
+async def _find_document_by_hash(
+    db: AsyncSession,
+    content_sha256: str,
+    exclude_id: int | None = None,
+) -> Document | None:
+    statement = select(Document).where(
+        Document.content_sha256 == content_sha256
+    )
+    if exclude_id is not None:
+        statement = statement.where(Document.id != exclude_id)
+
+    result = await db.execute(statement)
+    return result.scalar_one_or_none()
+
+
+async def _create_document_if_new(
+    title: str,
+    content: str,
+    db: AsyncSession,
+) -> tuple[Document, bool]:
+    content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    existing = await _find_document_by_hash(db, content_sha256)
+    if existing is not None:
+        return existing, False
+
+    document = Document(
+        title=title,
+        content=content,
+        content_sha256=content_sha256,
+        embedding=generate_embedding(content),
+    )
+    db.add(document)
+
+    try:
+        await db.flush()
+        await save_document_chunks(document, db)
+        await db.commit()
+        await db.refresh(document)
+    except IntegrityError:
+        await db.rollback()
+        # A concurrent request may have inserted the same content after
+        # the initial lookup. The unique constraint is the source of truth.
+        existing = await _find_document_by_hash(db, content_sha256)
+        if existing is not None:
+            return existing, False
+        raise
+    except Exception:
+        await db.rollback()
+        raise
+
+    return document, True
 
 @router.get("/", response_model=list[DocumentResponse])
 async def get_documents(
@@ -118,21 +175,46 @@ async def update_document(
             detail="Document content cannot be empty",
         )
 
+    content_sha256 = hashlib.sha256(
+        document_data.content.encode("utf-8")
+    ).hexdigest()
+    duplicate = await _find_document_by_hash(
+        db,
+        content_sha256,
+        exclude_id=document_id,
+    )
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Another document already has identical content",
+        )
+
     document.title = document_data.title
     document.content = document_data.content
+    document.content_sha256 = content_sha256
     document.embedding = generate_embedding(document_data.content)
 
-    await db.execute(
-        delete(DocumentChunk).where(
-            DocumentChunk.document_id == document_id
+    try:
+        await db.execute(
+            delete(DocumentChunk).where(
+                DocumentChunk.document_id == document_id
+            )
         )
-    )
-
-    await db.flush()
-    await save_document_chunks(document, db)
-
-    await db.commit()
-    await db.refresh(document)
+        await save_document_chunks(document, db)
+        await db.commit()
+        await db.refresh(document)
+    except IntegrityError as exc:
+        await db.rollback()
+        duplicate = await _find_document_by_hash(db, content_sha256)
+        if duplicate is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Another document already has identical content",
+            ) from exc
+        raise
+    except Exception:
+        await db.rollback()
+        raise
 
     return document
 
@@ -141,6 +223,7 @@ async def update_document(
 
 @router.post("/upload", response_model=DocumentResponse, status_code=201)
 async def upload_document(
+    response: Response,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
@@ -179,42 +262,27 @@ async def upload_document(
             detail="File cannot be empty"
         )
 
-    new_document = Document(
-        title = file.filename,
-        content = content,
-        embedding=generate_embedding(content)
+    document, created = await _create_document_if_new(
+        title=file.filename,
+        content=content,
+        db=db,
     )
-
-    db.add(new_document)
-    await db.flush()
-
-    await save_document_chunks(new_document, db)
-
-    await db.commit()
-    await db.refresh(new_document)
-
-    return new_document
+    response.status_code = 201 if created else 200
+    return document
 
 @router.post("/", response_model=DocumentResponse, status_code=201)
 async def create_document(
     document: DocumentCreate,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    new_document = Document(
+    created_document, created = await _create_document_if_new(
         title=document.title,
         content=document.content,
-        embedding=generate_embedding(document.content),
+        db=db,
     )
-
-    db.add(new_document)
-    await db.flush()
-
-    await save_document_chunks(new_document, db)
-
-    await db.commit()
-    await db.refresh(new_document)
-
-    return new_document
+    response.status_code = 201 if created else 200
+    return created_document
 
 
 @router.get("/search/chunks", response_model=list[ChunkSearchResult])
