@@ -168,8 +168,16 @@ async def generate_answer(question: str, context: str) -> str:
     except Exception as exc:
         _raise_gemini_service_error(exc)
 
-    answer = response.text
-    if not answer or not answer.strip():
+    try:
+        answer = response.text
+    except (AttributeError, ValueError) as exc:
+        # The SDK may return a response without a text candidate (for example,
+        # when generation is blocked or no candidate contains text).
+        raise GeminiEmptyResponseError(
+            "Gemini returned no readable answer text"
+        ) from exc
+
+    if not isinstance(answer, str) or not answer.strip():
         raise GeminiEmptyResponseError("Gemini returned an empty answer")
 
     return validate_source_citations(answer.strip(), context)
