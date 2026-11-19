@@ -1,4 +1,5 @@
 import hashlib
+from collections.abc import Sequence
 
 from app.services.embeddings import generate_embedding
 from app.services.search import search_documents
@@ -24,6 +25,7 @@ from app.services.document_extraction import (
     UnsupportedDocumentFormatError,
     InvalidDocumentFileError,
     EmptyDocumentError,
+    SourceSegment,
 )
 from app.services.llm import (
     generate_answer,
@@ -76,7 +78,7 @@ async def _create_document_if_new(
     title: str,
     content: str,
     db: AsyncSession,
-    source_segments=None,
+    source_segments: Sequence[SourceSegment] | None = None,
 ) -> tuple[Document, bool]:
     content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
