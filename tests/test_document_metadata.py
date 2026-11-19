@@ -110,3 +110,40 @@ async def test_chunk_storage_keeps_metadata_when_combining_paragraphs():
     assert stored_chunk.source_section == "Benefits"
     assert "First paragraph." in stored_chunk.content
     assert "Second paragraph." in stored_chunk.content
+
+
+
+@pytest.mark.asyncio
+async def test_docx_upload_passes_section_metadata_to_chunk_storage(client):
+    word = WordDocument()
+    word.add_heading("Remote work policy", level=1)
+    word.add_paragraph("Employees may work remotely.")
+    buffer = BytesIO()
+    word.save(buffer)
+
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch(
+            "app.api.documents.save_document_chunks",
+            new_callable=AsyncMock,
+        ) as save_chunks,
+    ):
+        response = await client.post(
+            "/documents/upload",
+            files={
+                "file": (
+                    "remote-policy.docx",
+                    buffer.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            },
+        )
+
+    assert response.status_code == 201
+    save_chunks.assert_awaited_once()
+    segments = save_chunks.await_args.kwargs["source_segments"]
+    assert any(
+        segment.section_title == "Remote work policy"
+        and "Employees may work remotely." in segment.text
+        for segment in segments
+    )
