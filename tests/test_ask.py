@@ -23,6 +23,8 @@ async def test_ask_returns_429_when_gemini_quota_exhausted(ask_request):
             "document_id": 1,
             "chunk_id": 1,
             "chunk_index": 0,
+            "source_page": None,
+            "source_section": None,
             "score": 0.9,
         }
     ]
