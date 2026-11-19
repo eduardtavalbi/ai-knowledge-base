@@ -7,11 +7,11 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 ## Features
 
 - **Document management** — create, view, update, and delete documents.
-- **File uploads** — import `.txt` and `.md` files with UTF-8 validation and a 2 MB size limit.
+- **File uploads** — import `.txt`, `.md`, `.pdf`, and `.docx` files with a 2 MB size limit; retain PDF page numbers and document section headings for source citations.
 - **Hybrid retrieval** — combines semantic vector search and PostgreSQL full-text search over document chunks using Reciprocal Rank Fusion (RRF).
 - **Multi-query retrieval** — Gemini generates alternative query formulations; retrieval safely falls back to the original query if expansion is unavailable. Results from all formulations are fused with RRF.
 - **RAG-based question answering** — retrieves relevant document chunks and passes them as context to Google Gemini.
-- **Source references** — returns the document chunks used to generate an answer.
+- **Source references** — returns the document chunks used to generate an answer, including PDF page numbers and DOCX/Markdown section headings when available.
 - **Relevance filtering** — filters out low-scoring semantic search results and limits duplicate or overly concentrated chunks.
 - **Asynchronous backend** — uses FastAPI and SQLAlchemy's async API.
 - **Database migrations** — manages schema changes with Alembic.
@@ -189,7 +189,7 @@ python -m pytest -v
 | `GET` | `/documents/{id}` | Retrieve a document |
 | `PUT` | `/documents/{id}` | Update a document |
 | `DELETE` | `/documents/{id}` | Delete a document |
-| `POST` | `/documents/upload` | Upload a `.txt` or `.md` file |
+| `POST` | `/documents/upload` | Upload a `.txt`, `.md`, `.pdf`, or `.docx` file |
 | `GET` | `/documents/search?q=...` | Search documents |
 | `GET` | `/documents/search/chunks?q=...` | Search document chunks |
 | `POST` | `/documents/ask` | Answer a question using retrieved context |
