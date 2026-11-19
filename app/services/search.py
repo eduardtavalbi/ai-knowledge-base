@@ -164,6 +164,8 @@ async def search_document_chunks(
                 "chunk_id": chunk.id,
                 "chunk_index": chunk.chunk_index,
                 "content": chunk.content,
+                "source_page": chunk.source_page,
+                "source_section": chunk.source_section,
             }
             scores[chunk.id] = scores.get(chunk.id, 0.0) + (
                 1.0 / (reciprocal_rank_constant + rank)
