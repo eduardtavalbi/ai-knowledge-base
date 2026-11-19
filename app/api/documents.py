@@ -83,7 +83,9 @@ async def _create_document_if_new(
         await db.rollback()
         # A concurrent request may have inserted the same content after
         # the initial lookup. The unique constraint is the source of truth.
-        existing = await _find_document_by_hash(db, content_sha256)
+        existing = await _find_document_by_hash(
+            db, content_sha256, content=content
+        )
         if existing is not None:
             return existing, False
         raise
