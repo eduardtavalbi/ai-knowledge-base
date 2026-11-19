@@ -8,8 +8,8 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 
 - **Document management** — create, view, update, and delete documents.
 - **File uploads** — import `.txt` and `.md` files with UTF-8 validation and a 2 MB size limit.
-- **Hybrid search** — combines title matching, PostgreSQL full-text search, and semantic search as a fallback.
-- **Semantic search** — represents text with multilingual embeddings and uses pgvector cosine distance to find relevant content.
+- **Hybrid retrieval** — combines semantic vector search and PostgreSQL full-text search over document chunks using Reciprocal Rank Fusion (RRF).
+- **Multi-query retrieval** — Gemini generates alternative query formulations; retrieval safely falls back to the original query if expansion is unavailable. Results from all formulations are fused with RRF.
 - **RAG-based question answering** — retrieves relevant document chunks and passes them as context to Google Gemini.
 - **Source references** — returns the document chunks used to generate an answer.
 - **Relevance filtering** — filters out low-scoring semantic search results and limits duplicate or overly concentrated chunks.
@@ -76,11 +76,12 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 
 1. A user submits a natural-language query.
 2. The application first checks for title matches.
-3. If no results are found, PostgreSQL full-text search is used.
-4. If that also returns no results, semantic search ranks document chunks by cosine distance.
-5. For question answering, the most relevant chunks are combined into context.
-6. Google Gemini generates an answer based on that context.
-7. The API returns the answer and its source chunks.
+3. Gemini optionally expands the query into a small set of alternative formulations.
+4. Each formulation retrieves document chunks through semantic vector search and PostgreSQL full-text search.
+5. Reciprocal Rank Fusion combines the ranked lists; duplicate chunks are removed and no document contributes more than two chunks.
+6. The most relevant chunks are combined into context.
+7. Google Gemini generates an answer based on that context.
+8. The API returns the answer and its source chunks.
 
 ## Getting Started
 
