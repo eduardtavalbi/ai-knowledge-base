@@ -2,6 +2,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.services.llm import InvalidSourceCitationError
+
 
 def make_chunk(
     document_id: int = 42,
@@ -119,9 +121,7 @@ async def test_ask_returns_safe_fallback_when_model_cites_unknown_source(client)
         patch(
             "app.api.documents.generate_answer",
             new_callable=AsyncMock,
-            side_effect=__import__(
-                "app.services.llm", fromlist=["InvalidSourceCitationError"]
-            ).InvalidSourceCitationError("unknown source"),
+            side_effect=InvalidSourceCitationError("unknown source"),
         ),
     ):
         response = await client.post(
