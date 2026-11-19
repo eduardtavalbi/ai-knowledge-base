@@ -203,3 +203,37 @@ async def test_expand_search_queries_deduplicates_and_respects_limit():
     assert queries[0] == "Политика отпусков"
     assert len(queries) == 2
     assert queries[1] == "правила предоставления отпуска"
+
+
+@pytest.mark.asyncio
+async def test_expand_search_queries_ignores_overlong_generated_candidates():
+    client = MagicMock()
+    long_candidate = "политика " * 30
+    client.aio.models.generate_content = AsyncMock(
+        return_value=SimpleNamespace(
+            text=f"{long_candidate}\n- правила оформления отпуска"
+        )
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        queries = await expand_search_queries("Отпуск", max_queries=3)
+
+    assert queries == ["Отпуск", "правила оформления отпуска"]
+
+
+@pytest.mark.asyncio
+async def test_expand_search_queries_falls_back_when_response_has_no_text():
+    class BlockedResponse:
+        @property
+        def text(self):
+            raise ValueError("no text candidate")
+
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        return_value=BlockedResponse()
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        queries = await expand_search_queries("Настройка доступа", max_queries=3)
+
+    assert queries == ["Настройка доступа"]
