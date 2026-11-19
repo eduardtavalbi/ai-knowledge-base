@@ -164,7 +164,7 @@ async def test_upload_unsupported_file(client):
 
     assert response.status_code == 400
     assert response.json() == {
-        "detail": "Only .txt and .md files are supported"
+        "detail": "Only .txt, .md, .pdf and .docx files are supported"
     }
 
 
@@ -384,3 +384,142 @@ async def test_updated_content_fingerprint_is_used_for_deduplication(client):
     assert updated.status_code == 200
     assert duplicate.status_code == 200
     assert duplicate.json()["id"] == document_id
+
+
+
+@pytest.mark.asyncio
+async def test_upload_docx_extracts_paragraphs_and_tables(client):
+    from io import BytesIO
+    from docx import Document as WordDocument
+
+    word_document = WordDocument()
+    word_document.add_heading("Employee handbook", level=1)
+    word_document.add_paragraph("Vacation policy: 20 days per year.")
+    table = word_document.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "Region"
+    table.rows[0].cells[1].text = "Allowance"
+    buffer = BytesIO()
+    word_document.save(buffer)
+
+    response = await client.post(
+        "/documents/upload",
+        files={
+            "file": (
+                "handbook.docx",
+                buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    extracted = response.json()["content"]
+    assert "Employee handbook" in extracted
+    assert "Vacation policy: 20 days per year." in extracted
+    assert "Region | Allowance" in extracted
+
+
+def _build_text_pdf(text: str) -> bytes:
+    stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode("ascii")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+        ),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        (
+            b"<< /Length " + str(len(stream)).encode("ascii")
+            + b" >>\nstream\n" + stream + b"\nendstream"
+        ),
+    ]
+
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{index} 0 obj\n".encode("ascii"))
+        pdf.extend(obj)
+        pdf.extend(b"\nendobj\n")
+
+    xref_offset = len(pdf)
+    pdf.extend(f"xref\n0 {len(offsets)}\n".encode("ascii"))
+    pdf.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        (
+            f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\n"
+            f"startxref\n{xref_offset}\n%%EOF"
+        ).encode("ascii")
+    )
+    return bytes(pdf)
+
+
+@pytest.mark.asyncio
+async def test_upload_pdf_extracts_text(client):
+    response = await client.post(
+        "/documents/upload",
+        files={
+            "file": (
+                "policy.pdf",
+                _build_text_pdf("Vacation policy: 20 days per year."),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    assert "Vacation policy: 20 days per year." in response.json()["content"]
+
+
+@pytest.mark.asyncio
+async def test_upload_pdf_without_extractable_text_is_rejected(client):
+    from io import BytesIO
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    buffer = BytesIO()
+    writer.write(buffer)
+
+    response = await client.post(
+        "/documents/upload",
+        files={"file": ("blank.pdf", buffer.getvalue(), "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "No readable text found in the uploaded file"
+    )
+
+
+@pytest.mark.asyncio
+async def test_upload_invalid_docx_is_rejected(client):
+    response = await client.post(
+        "/documents/upload",
+        files={
+            "file": (
+                "broken.docx",
+                b"this is not a Word document",
+                "application/octet-stream",
+            )
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Could not read the DOCX file"
+
+
+@pytest.mark.asyncio
+async def test_upload_invalid_pdf_is_rejected(client):
+    response = await client.post(
+        "/documents/upload",
+        files={
+            "file": ("broken.pdf", b"not a PDF", "application/pdf"),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Could not read the PDF file"
