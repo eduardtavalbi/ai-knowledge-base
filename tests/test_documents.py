@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
 
 from app.models.document_chunk import DocumentChunk
-from tests.conftest import TestingSessionLocal
+from conftest import TestingSessionLocal
 
 @pytest.mark.asyncio
 async def test_create_document(client):
