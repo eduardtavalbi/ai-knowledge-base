@@ -218,3 +218,54 @@ async def test_postgres_search_supports_russian_and_english_expansions(
     assert russian_chunk.id in result_ids
     assert english_chunk.id in result_ids
     assert len(results) == 2
+
+
+@pytest.mark.asyncio
+async def test_postgres_search_keeps_conflicting_policy_sources(postgres_session):
+    old_policy = Document(
+        title="VPN policy 2024",
+        content="External contractors do not need VPN access.",
+    )
+    current_policy = Document(
+        title="VPN policy 2026",
+        content="External contractors must use VPN access.",
+    )
+    postgres_session.add_all([old_policy, current_policy])
+    await postgres_session.flush()
+
+    old_chunk = DocumentChunk(
+        document_id=old_policy.id,
+        chunk_index=0,
+        content="External contractors do not need VPN access.",
+        embedding=embedding(1.0),
+    )
+    current_chunk = DocumentChunk(
+        document_id=current_policy.id,
+        chunk_index=0,
+        content="External contractors must use VPN access.",
+        embedding=embedding(0.98, 0.2),
+    )
+    postgres_session.add_all([old_chunk, current_chunk])
+    await postgres_session.commit()
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=["VPN access contractors"],
+        ),
+        patch(
+            "app.services.search.generate_embedding",
+            return_value=embedding(1.0),
+        ),
+    ):
+        results = await search_document_chunks(
+            "VPN access contractors",
+            postgres_session,
+            limit=5,
+        )
+
+    result_ids = {item["chunk_id"] for item in results}
+    assert old_chunk.id in result_ids
+    assert current_chunk.id in result_ids
+    assert len(results) == 2
