@@ -283,3 +283,104 @@ async def test_search_documents_max_limit(client):
     assert response.status_code == 200
     assert response.json() == []
     assert mock_search.await_args.kwargs["limit"] == 20
+
+@pytest.mark.asyncio
+async def test_upload_same_content_returns_existing_document(client):
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch("app.api.documents.save_document_chunks", new_callable=AsyncMock),
+    ):
+        first = await client.post(
+            "/documents/upload",
+            files={"file": ("first.txt", b"Identical document content", "text/plain")},
+        )
+        second = await client.post(
+            "/documents/upload",
+            files={"file": ("renamed.md", b"Identical document content", "text/markdown")},
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+    assert second.json()["title"] == "first.txt"
+
+    documents = await client.get("/documents/")
+    assert len(documents.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_create_same_content_returns_existing_document(client):
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch("app.api.documents.save_document_chunks", new_callable=AsyncMock),
+    ):
+        first = await client.post(
+            "/documents/",
+            json={"title": "Original", "content": "Same body"},
+        )
+        second = await client.post(
+            "/documents/",
+            json={"title": "Different title", "content": "Same body"},
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+
+    documents = await client.get("/documents/")
+    assert len(documents.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_content_used_by_another_document(client):
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch("app.api.documents.save_document_chunks", new_callable=AsyncMock),
+    ):
+        first = await client.post(
+            "/documents/",
+            json={"title": "First", "content": "First body"},
+        )
+        second = await client.post(
+            "/documents/",
+            json={"title": "Second", "content": "Second body"},
+        )
+
+        response = await client.put(
+            f"/documents/{second.json()['id']}",
+            json={"title": "Second", "content": "First body"},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Another document already has identical content"
+    )
+
+    unchanged = await client.get(f"/documents/{second.json()['id']}")
+    assert unchanged.json()["content"] == "Second body"
+
+
+@pytest.mark.asyncio
+async def test_updated_content_fingerprint_is_used_for_deduplication(client):
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch("app.api.documents.save_document_chunks", new_callable=AsyncMock),
+    ):
+        created = await client.post(
+            "/documents/",
+            json={"title": "Before", "content": "Before update"},
+        )
+        document_id = created.json()["id"]
+
+        updated = await client.put(
+            f"/documents/{document_id}",
+            json={"title": "After", "content": "After update"},
+        )
+        duplicate = await client.post(
+            "/documents/",
+            json={"title": "Duplicate", "content": "After update"},
+        )
+
+    assert updated.status_code == 200
+    assert duplicate.status_code == 200
+    assert duplicate.json()["id"] == document_id
