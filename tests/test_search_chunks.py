@@ -15,12 +15,16 @@ def make_chunk(
     document_id: int,
     content: str,
     chunk_index: int = 0,
+    source_page: int | None = None,
+    source_section: str | None = None,
 ):
     return SimpleNamespace(
         id=chunk_id,
         document_id=document_id,
         content=content,
         chunk_index=chunk_index,
+        source_page=source_page,
+        source_section=source_section,
     )
 
 
@@ -33,7 +37,7 @@ def result(rows):
 @pytest.mark.asyncio
 async def test_hybrid_search_returns_relevant_chunks():
     document = make_document(1, "Python")
-    chunk = make_chunk(10, 1, "FastAPI is a Python framework.")
+    chunk = make_chunk(10, 1, "FastAPI is a Python framework.", source_page=4, source_section="Backend")
     db = AsyncMock()
     db.execute.side_effect = [
         result([(document, chunk, 0.1)]),
@@ -52,6 +56,8 @@ async def test_hybrid_search_returns_relevant_chunks():
     assert chunks[0]["document_id"] == 1
     assert chunks[0]["chunk_id"] == 10
     assert chunks[0]["content"] == "FastAPI is a Python framework."
+    assert chunks[0]["source_page"] == 4
+    assert chunks[0]["source_section"] == "Backend"
     assert chunks[0]["score"] == 1.0
     embedding.assert_called_once_with("Python framework")
     assert db.execute.await_count == 2
