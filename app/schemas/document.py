@@ -26,6 +26,8 @@ class ChunkSearchResult(BaseModel):
     chunk_id: int
     chunk_index: int
     content: str
+    source_page: int | None = None
+    source_section: str | None = None
     score: float
 
 class AskRequest(BaseModel):

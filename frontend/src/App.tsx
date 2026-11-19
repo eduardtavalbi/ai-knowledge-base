@@ -32,6 +32,8 @@ type AskSource = {
   score: number
   chunk_id: number
   chunk_index: number
+  source_page?: number | null
+  source_section?: string | null
 }
 
 type AskResponse = {
@@ -72,6 +74,7 @@ function App() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const [aiAnswer, setAiAnswer] = useState('')
@@ -155,11 +158,30 @@ function App() {
     }
   }
   async function uploadFile(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
+    const input = event.currentTarget
+    const file = input.files?.[0]
     if (!file) return
+
+    const allowedExtensions = ['.pdf', '.docx', '.txt', '.md']
+    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+    const maxFileSize = 2 * 1024 * 1024
+
+    if (!allowedExtensions.includes(extension)) {
+      setMessage('Неподдерживаемый формат. Выбери PDF, DOCX, TXT или MD.')
+      input.value = ''
+      return
+    }
+
+    if (file.size > maxFileSize) {
+      setMessage('Файл слишком большой. Максимальный размер — 2 МБ.')
+      input.value = ''
+      return
+    }
 
     const formData = new FormData()
     formData.append('file', file)
+    setUploading(true)
+    setMessage('')
 
     try {
       const response = await fetch(`${API_URL}/documents/upload`, {
@@ -168,16 +190,33 @@ function App() {
       })
 
       if (!response.ok) {
-        throw new Error('Не удалось загрузить документ')
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          errorData?.detail || `Не удалось загрузить документ (HTTP ${response.status})`,
+        )
       }
 
       const document: DocumentItem = await response.json()
-      setDocuments((current) => [document, ...current])
-      setMessage(`Документ «${document.title}» загружен.`)
-    } catch {
-      setMessage('Ошибка загрузки. Проверь API и формат файла.')
+      setDocuments((current) => {
+        const alreadyListed = current.some((item) => item.id === document.id)
+        return alreadyListed
+          ? current.map((item) => item.id === document.id ? document : item)
+          : [document, ...current]
+      })
+      setMessage(
+        response.status === 200
+          ? `Документ «${document.title}» уже есть в базе знаний.`
+          : `Документ «${document.title}» загружен.`,
+      )
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось загрузить документ. Проверь подключение к API.',
+      )
     } finally {
-      event.target.value = ''
+      setUploading(false)
+      input.value = ''
     }
   }
   async function deleteDocument(document: DocumentItem) {
@@ -515,10 +554,18 @@ function App() {
 
                       <p>{source.content}</p>
 
-                      <span>
-                        Фрагмент документа · релевантность:{' '}
-                        {(source.score * 100).toFixed(1)}%
-                      </span>
+                      <div className="ai-source-meta">
+                        <span>Фрагмент документа</span>
+                        {source.source_page != null && (
+                          <span>Страница {source.source_page}</span>
+                        )}
+                        {source.source_section && (
+                          <span>Раздел: {source.source_section}</span>
+                        )}
+                        <span>
+                          Релевантность: {(source.score * 100).toFixed(1)}%
+                        </span>
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -575,21 +622,26 @@ function App() {
               <div className="upload-icon"><Upload size={20} /></div>
               <div>
                 <h3>Пополнить базу знаний</h3>
-                <p>Загрузи документ, чтобы он стал доступен для поиска.</p>
+                <p>Поддерживаются PDF, DOCX, TXT и Markdown · до 2 МБ.</p>
               </div>
             </div>
             <input
               ref={fileInput}
               type="file"
-              accept=".txt,.md"
+              accept=".pdf,.docx,.txt,.md"
               hidden
               onChange={uploadFile}
             />
             <button
               className="upload-button"
+              disabled={uploading}
               onClick={() => fileInput.current?.click()}
             >
-              <Plus size={17} /> Добавить документ
+              {uploading ? (
+                <><LoaderCircle className="spin" size={17} /> Загрузка…</>
+              ) : (
+                <><Plus size={17} /> Добавить документ</>
+              )}
             </button>
           </section>
           )}

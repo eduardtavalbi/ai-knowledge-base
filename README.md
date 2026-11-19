@@ -7,11 +7,11 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 ## Features
 
 - **Document management** — create, view, update, and delete documents.
-- **File uploads** — import `.txt` and `.md` files with UTF-8 validation and a 2 MB size limit.
-- **Hybrid search** — combines title matching, PostgreSQL full-text search, and semantic search as a fallback.
-- **Semantic search** — represents text with multilingual embeddings and uses pgvector cosine distance to find relevant content.
+- **File uploads** — import `.txt`, `.md`, `.pdf`, and `.docx` files with a 2 MB size limit; retain PDF page numbers and document section headings for source citations.
+- **Hybrid retrieval** — combines semantic vector search and PostgreSQL full-text search over document chunks using Reciprocal Rank Fusion (RRF).
+- **Multi-query retrieval** — Gemini generates alternative query formulations; retrieval safely falls back to the original query if expansion is unavailable. Results from all formulations are fused with RRF.
 - **RAG-based question answering** — retrieves relevant document chunks and passes them as context to Google Gemini.
-- **Source references** — returns the document chunks used to generate an answer.
+- **Source references** — returns the document chunks used to generate an answer, including PDF page numbers and DOCX/Markdown section headings when available.
 - **Relevance filtering** — filters out low-scoring semantic search results and limits duplicate or overly concentrated chunks.
 - **Asynchronous backend** — uses FastAPI and SQLAlchemy's async API.
 - **Database migrations** — manages schema changes with Alembic.
@@ -76,11 +76,12 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 
 1. A user submits a natural-language query.
 2. The application first checks for title matches.
-3. If no results are found, PostgreSQL full-text search is used.
-4. If that also returns no results, semantic search ranks document chunks by cosine distance.
-5. For question answering, the most relevant chunks are combined into context.
-6. Google Gemini generates an answer based on that context.
-7. The API returns the answer and its source chunks.
+3. Gemini optionally expands the query into a small set of alternative formulations.
+4. Each formulation retrieves document chunks through semantic vector search and PostgreSQL full-text search.
+5. Reciprocal Rank Fusion combines the ranked lists; duplicate chunks are removed and no document contributes more than two chunks.
+6. The most relevant chunks are combined into context.
+7. Google Gemini generates an answer based on that context.
+8. The API returns the answer and its source chunks.
 
 ## Getting Started
 
@@ -117,7 +118,7 @@ POSTGRES_DB=knowledge_base
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=YOUR_PASSWORD
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
 Use your own credentials. Never commit `.env` or API keys.
@@ -188,7 +189,7 @@ python -m pytest -v
 | `GET` | `/documents/{id}` | Retrieve a document |
 | `PUT` | `/documents/{id}` | Update a document |
 | `DELETE` | `/documents/{id}` | Delete a document |
-| `POST` | `/documents/upload` | Upload a `.txt` or `.md` file |
+| `POST` | `/documents/upload` | Upload a `.txt`, `.md`, `.pdf`, or `.docx` file |
 | `GET` | `/documents/search?q=...` | Search documents |
 | `GET` | `/documents/search/chunks?q=...` | Search document chunks |
 | `POST` | `/documents/ask` | Answer a question using retrieved context |

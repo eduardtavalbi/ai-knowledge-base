@@ -8,6 +8,20 @@ from app.models.document_chunk import DocumentChunk
 from app.services.embeddings import generate_embedding
 
 
+_NEGATION_PATTERN = re.compile(
+    r"\b(?:not|no|never|without|cannot|can't|не|нет|ни|никогда|без)\b",
+    re.IGNORECASE,
+)
+
+
+def _negation_signature(text: str) -> frozenset[str]:
+    """Return explicit negation markers so contradictory text is not deduplicated."""
+    return frozenset(
+        match.group(0).lower()
+        for match in _NEGATION_PATTERN.finditer(text)
+    )
+
+
 
 
 
@@ -139,75 +153,131 @@ async def search_document_chunks(
     db: AsyncSession,
     limit: int = 5,
 ) -> list[dict]:
-    query_embedding = generate_embedding(query)
+    if not query.strip() or limit <= 0:
+        return []
 
-    distance = DocumentChunk.embedding.cosine_distance(
-        query_embedding
-    ).label("distance")
+    from app.services.llm import expand_search_queries
 
-    statement = (
-        select(Document, DocumentChunk, distance)
-        .join(
-            DocumentChunk,
-            DocumentChunk.document_id == Document.id,
+    queries = await expand_search_queries(query, max_queries=3)
+    reciprocal_rank_constant = 60
+    candidate_limit = limit * 10
+    scores: dict[int, float] = {}
+    chunks_by_id: dict[int, dict] = {}
+
+    def add_ranked_results(rows, *, semantic: bool = False) -> None:
+        for rank, (document, chunk, raw_score, *_) in enumerate(rows, start=1):
+            if semantic:
+                # Preserve the established minimum cosine-similarity threshold.
+                # pgvector returns cosine distance, so similarity = 1 - distance.
+                if raw_score is None or (1.0 - float(raw_score)) < 0.45:
+                    continue
+
+            chunks_by_id[chunk.id] = {
+                "document_id": document.id,
+                "title": document.title,
+                "chunk_id": chunk.id,
+                "chunk_index": chunk.chunk_index,
+                "content": chunk.content,
+                "source_page": chunk.source_page,
+                "source_section": chunk.source_section,
+            }
+            scores[chunk.id] = scores.get(chunk.id, 0.0) + (
+                1.0 / (reciprocal_rank_constant + rank)
+            )
+
+    for search_query in queries:
+        query_embedding = generate_embedding(search_query)
+        distance = DocumentChunk.embedding.cosine_distance(
+            query_embedding
+        ).label("distance")
+
+        semantic_statement = (
+            select(Document, DocumentChunk, distance)
+            .join(
+                DocumentChunk,
+                DocumentChunk.document_id == Document.id,
+            )
+            .where(
+                DocumentChunk.embedding.is_not(None),
+                distance <= 0.55,
+            )
+            .order_by(distance)
+            .limit(candidate_limit)
         )
-        .where(DocumentChunk.embedding.is_not(None))
-        .order_by(distance)
-        .limit(limit * 10)
+        semantic_result = await db.execute(semantic_statement)
+        add_ranked_results(semantic_result.all(), semantic=True)
+
+        search_vector = func.to_tsvector(
+            "simple",
+            func.concat_ws(
+                " ",
+                Document.title,
+                DocumentChunk.content,
+            ),
+        )
+        search_tsquery = func.plainto_tsquery("simple", search_query)
+        text_rank = func.ts_rank(search_vector, search_tsquery).label("rank")
+
+        text_statement = (
+            select(Document, DocumentChunk, text_rank)
+            .join(
+                DocumentChunk,
+                DocumentChunk.document_id == Document.id,
+            )
+            .where(search_vector.op("@@")(search_tsquery))
+            .order_by(text_rank.desc())
+            .limit(candidate_limit)
+        )
+        text_result = await db.execute(text_statement)
+        add_ranked_results(text_result.all())
+
+    if not scores:
+        return []
+
+    max_score = max(scores.values())
+    ranked_chunks = sorted(
+        scores,
+        key=lambda chunk_id: scores[chunk_id],
+        reverse=True,
     )
 
-    result = await db.execute(statement)
-
-    chunks = []
+    chunks: list[dict] = []
     chunks_by_document: dict[int, list[str]] = {}
-    min_score = 0.45
     max_chunks_per_document = 2
     duplicate_threshold = 0.90
 
-    for document, chunk, cosine_distance in result.all():
-        score = round(1 - cosine_distance, 4)
-
-        if score < min_score:
-            continue
-
+    for chunk_id in ranked_chunks:
+        item = chunks_by_id[chunk_id]
         normalized_content = re.sub(
             r"\s+",
             " ",
-            chunk.content,
+            item["content"],
         ).strip().lower()
 
-        existing_chunks = chunks_by_document.get(
-            document.id,
-            [],
-        )
-
+        existing_chunks = chunks_by_document.get(item["document_id"], [])
         if len(existing_chunks) >= max_chunks_per_document:
             continue
 
+        current_negation = _negation_signature(normalized_content)
         is_duplicate = any(
-            SequenceMatcher(
+            current_negation == _negation_signature(existing_content)
+            and SequenceMatcher(
                 None,
                 normalized_content,
                 existing_content,
             ).ratio() >= duplicate_threshold
             for existing_content in existing_chunks
         )
-
         if is_duplicate:
             continue
 
-        chunks_by_document.setdefault(
-            document.id,
-            [],
-        ).append(normalized_content)
-
+        chunks_by_document.setdefault(item["document_id"], []).append(
+            normalized_content
+        )
         chunks.append({
-            "document_id": document.id,
-            "title": document.title,
-            "chunk_id": chunk.id,
-            "chunk_index": chunk.chunk_index,
-            "content": chunk.content,
-            "score": score,
+            **item,
+            # Relative fused score (0..1), not a cosine similarity.
+            "score": round(scores[chunk_id] / max_score, 4),
         })
 
         if len(chunks) >= limit:

@@ -908,3 +908,13 @@ button:disabled {
   color: var(--text-secondary, #aaa6ba);
   font-size: 11px;
 }
+
+.ai-source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 14px;
+  color: var(--text-secondary, #aaa6ba);
+  font-size: 11px;
+  line-height: 1.5;
+}

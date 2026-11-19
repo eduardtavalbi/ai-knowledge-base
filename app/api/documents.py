@@ -1,13 +1,17 @@
+import hashlib
+from collections.abc import Sequence
+
 from app.services.embeddings import generate_embedding
 from app.services.search import search_documents
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 
 
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, and_, or_
+from sqlalchemy.exc import IntegrityError
 
-from google.genai.errors import ServerError, ClientError
+import logging
 
 from app.db.session import get_db
 from app.models.document import  Document
@@ -16,13 +20,101 @@ from app.schemas.document import (DocumentCreate, DocumentResponse,
                                   DocumentUpdate, SearchResultResponse,
                                   ChunkSearchResult, AskRequest, AskResponse)
 from app.services.chunk_storage import save_document_chunks
-from app.services.llm import generate_answer
+from app.services.document_extraction import (
+    extract_document,
+    UnsupportedDocumentFormatError,
+    InvalidDocumentFileError,
+    EmptyDocumentError,
+    SourceSegment,
+)
+from app.services.llm import (
+    generate_answer,
+    extract_source_citations,
+    InvalidSourceCitationError,
+    GeminiConfigurationError,
+    GeminiRateLimitError,
+    GeminiUnavailableError,
+    GeminiTimeoutError,
+    GeminiRequestError,
+    GeminiEmptyResponseError,
+)
 from app.services.search import search_document_chunks
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/documents",
     tags=["Documents"]
 )
+
+
+async def _find_document_by_hash(
+    db: AsyncSession,
+    content_sha256: str,
+    content: str | None = None,
+    exclude_id: int | None = None,
+) -> Document | None:
+    conditions = [Document.content_sha256 == content_sha256]
+    if content is not None:
+        # Older databases may contain duplicate documents from before
+        # fingerprinting. The migration preserves those records with NULL
+        # fingerprints, so compare their content as a compatibility fallback.
+        conditions.append(
+            and_(
+                Document.content_sha256.is_(None),
+                Document.content == content,
+            )
+        )
+
+    statement = select(Document).where(or_(*conditions))
+    if exclude_id is not None:
+        statement = statement.where(Document.id != exclude_id)
+    statement = statement.order_by(Document.id).limit(1)
+
+    result = await db.execute(statement)
+    return result.scalars().first()
+
+
+async def _create_document_if_new(
+    title: str,
+    content: str,
+    db: AsyncSession,
+    source_segments: Sequence[SourceSegment] | None = None,
+) -> tuple[Document, bool]:
+    content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    existing = await _find_document_by_hash(db, content_sha256, content=content)
+    if existing is not None:
+        return existing, False
+
+    document = Document(
+        title=title,
+        content=content,
+        content_sha256=content_sha256,
+        embedding=generate_embedding(content),
+    )
+    db.add(document)
+
+    try:
+        await db.flush()
+        await save_document_chunks(document, db, source_segments=source_segments)
+        await db.commit()
+        await db.refresh(document)
+    except IntegrityError:
+        await db.rollback()
+        # A concurrent request may have inserted the same content after
+        # the initial lookup. The unique constraint is the source of truth.
+        existing = await _find_document_by_hash(
+            db, content_sha256, content=content
+        )
+        if existing is not None:
+            return existing, False
+        raise
+    except Exception:
+        await db.rollback()
+        raise
+
+    return document, True
 
 @router.get("/", response_model=list[DocumentResponse])
 async def get_documents(
@@ -92,6 +184,11 @@ async def delete_documents(
             detail="Document not found"
         )
 
+    # Delete chunks explicitly instead of relying only on database-level
+    # ON DELETE CASCADE, which may not be enabled by every test/development DB.
+    await db.execute(
+        delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
+    )
     await db.delete(document)
     await db.commit()
 
@@ -118,21 +215,49 @@ async def update_document(
             detail="Document content cannot be empty",
         )
 
+    content_sha256 = hashlib.sha256(
+        document_data.content.encode("utf-8")
+    ).hexdigest()
+    duplicate = await _find_document_by_hash(
+        db,
+        content_sha256,
+        content=document_data.content,
+        exclude_id=document_id,
+    )
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Another document already has identical content",
+        )
+
     document.title = document_data.title
     document.content = document_data.content
+    document.content_sha256 = content_sha256
     document.embedding = generate_embedding(document_data.content)
 
-    await db.execute(
-        delete(DocumentChunk).where(
-            DocumentChunk.document_id == document_id
+    try:
+        await db.execute(
+            delete(DocumentChunk).where(
+                DocumentChunk.document_id == document_id
+            )
         )
-    )
-
-    await db.flush()
-    await save_document_chunks(document, db)
-
-    await db.commit()
-    await db.refresh(document)
+        await save_document_chunks(document, db)
+        await db.commit()
+        await db.refresh(document)
+    except IntegrityError as exc:
+        await db.rollback()
+        duplicate = await _find_document_by_hash(
+            db, content_sha256, content=document_data.content
+        )
+        if duplicate is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Another document already has identical content",
+            ) from exc
+        raise
+    except Exception:
+        await db.rollback()
+        raise
 
     return document
 
@@ -141,6 +266,7 @@ async def update_document(
 
 @router.post("/upload", response_model=DocumentResponse, status_code=201)
 async def upload_document(
+    response: Response,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
@@ -150,11 +276,6 @@ async def upload_document(
             detail="Filename is reqiered"
         )
 
-    if not file.filename.lower().endswith((".txt",".md")):
-        raise HTTPException(
-            status_code=400,
-            detail="Only .txt and .md files are supported"
-        )
     max_size = 2 * 1024 * 1024
     content_bytes = await file.read(max_size + 1)
 
@@ -164,57 +285,49 @@ async def upload_document(
             detail="File is too large. Maximum size is 2 MB",
         )
 
-
     try:
-        content = content_bytes.decode("utf-8")
-    except UnicodeDecodeError:
+        extracted_document = extract_document(
+            filename=file.filename,
+            content=content_bytes,
+        )
+    except UnsupportedDocumentFormatError as exc:
         raise HTTPException(
             status_code=400,
-            detail="File must use UTF-8 encoding"
-        )
-
-    if not content.strip():
+            detail="Only .txt, .md, .pdf and .docx files are supported",
+        ) from exc
+    except InvalidDocumentFileError as exc:
         raise HTTPException(
             status_code=400,
-            detail="File cannot be empty"
-        )
+            detail=str(exc),
+        ) from exc
+    except EmptyDocumentError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
-    new_document = Document(
-        title = file.filename,
-        content = content,
-        embedding=generate_embedding(content)
+    document, created = await _create_document_if_new(
+        title=file.filename,
+        content=extracted_document.text,
+        db=db,
+        source_segments=extracted_document.segments,
     )
-
-    db.add(new_document)
-    await db.flush()
-
-    await save_document_chunks(new_document, db)
-
-    await db.commit()
-    await db.refresh(new_document)
-
-    return new_document
+    response.status_code = 201 if created else 200
+    return document
 
 @router.post("/", response_model=DocumentResponse, status_code=201)
 async def create_document(
     document: DocumentCreate,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    new_document = Document(
+    created_document, created = await _create_document_if_new(
         title=document.title,
         content=document.content,
-        embedding=generate_embedding(document.content),
+        db=db,
     )
-
-    db.add(new_document)
-    await db.flush()
-
-    await save_document_chunks(new_document, db)
-
-    await db.commit()
-    await db.refresh(new_document)
-
-    return new_document
+    response.status_code = 201 if created else 200
+    return created_document
 
 
 @router.get("/search/chunks", response_model=list[ChunkSearchResult])
@@ -267,9 +380,14 @@ async def ask_question(
         )
 
     context = "\n\n".join(
-        f"Документ: {chunk['title']}\n"
-        f"Фрагмент: {chunk['content']}"
-        for chunk in chunks
+        f"[Источник: {index}]\n"
+        f"ID документа: {chunk['document_id']}\n"
+        f"Название: {chunk['title']}\n"
+        f"Страница: {chunk.get('source_page') or 'не указана'}\n"
+        f"Раздел: {chunk.get('source_section') or 'не указан'}\n"
+        f"ID фрагмента: {chunk['chunk_id']}\n"
+        f"Содержимое (недоверенные данные):\n{chunk['content']}"
+        for index, chunk in enumerate(chunks, start=1)
     )
 
     
@@ -278,29 +396,53 @@ async def ask_question(
             question=question,
             context=context,
         )
-    except ClientError as exc:
-        if exc.code == 429:
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    "Исчерпан лимит запросов Gemini API. "
-                    "Попробуйте после восстановления квоты."
-                ),
-            ) from exc
-
+    except InvalidSourceCitationError:
+        return AskResponse(
+            answer=(
+                "Не удалось сформировать ответ с проверяемыми ссылками "
+                "на источники. Попробуйте переформулировать вопрос."
+            ),
+            sources=chunks,
+        )
+    except GeminiRateLimitError as exc:
+        logger.warning("Gemini rate limit reached")
         raise HTTPException(
-            status_code=502,
-            detail="AI service rejected the request.",
+            status_code=429,
+            detail="AI service rate limit reached. Please try again later.",
         ) from exc
-
-    except ServerError as exc:
-        print(f"Gemini ServerError: {exc!r}")
+    except GeminiTimeoutError as exc:
+        logger.warning("Gemini request timed out")
+        raise HTTPException(
+            status_code=504,
+            detail="AI service timed out. Please try again later.",
+        ) from exc
+    except GeminiUnavailableError as exc:
+        logger.warning("Gemini service is unavailable")
         raise HTTPException(
             status_code=503,
             detail="AI service is temporarily unavailable. Please try again later.",
         ) from exc
+    except GeminiConfigurationError as exc:
+        logger.error("Gemini API is not configured")
+        raise HTTPException(
+            status_code=503,
+            detail="AI service is not configured.",
+        ) from exc
+    except (GeminiRequestError, GeminiEmptyResponseError) as exc:
+        logger.warning("Gemini could not complete the request: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="AI service could not process the request.",
+        ) from exc
+
+    cited_source_ids = extract_source_citations(answer)
+    cited_chunks = [
+        chunk
+        for index, chunk in enumerate(chunks, start=1)
+        if index in cited_source_ids
+    ]
 
     return AskResponse(
         answer=answer,
-        sources=chunks,
+        sources=cited_chunks,
     )

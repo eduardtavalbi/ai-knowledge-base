@@ -1,4 +1,16 @@
-﻿def split_text(
+import re
+
+
+def _split_oversized_paragraph(paragraph: str, chunk_size: int, overlap: int) -> list[str]:
+    """Split a long paragraph into bounded windows without dropping characters."""
+    step = chunk_size - overlap
+    return [
+        paragraph[start : start + chunk_size]
+        for start in range(0, len(paragraph), step)
+    ]
+
+
+def split_text(
     text: str,
     chunk_size: int = 500,
     overlap: int = 100,
@@ -12,23 +24,43 @@
     if overlap >= chunk_size:
         raise ValueError("overlap must be smaller than chunk_size")
 
-    normalized_text = " ".join(text.split())
+    paragraphs = [
+        re.sub(r"\s+", " ", paragraph).strip()
+        for paragraph in re.split(r"\n\s*\n", text.strip())
+        if paragraph.strip()
+    ]
 
-    if not normalized_text:
+    if not paragraphs:
         return []
 
-    chunks = []
-    start = 0
-    text_length = len(normalized_text)
-    step = chunk_size - overlap
+    chunks: list[str] = []
+    current = ""
 
-    while start < text_length:
-        end = min(start + chunk_size, text_length)
-        chunk = normalized_text[start:end].strip()
+    for paragraph in paragraphs:
+        if len(paragraph) > chunk_size:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.extend(
+                _split_oversized_paragraph(paragraph, chunk_size, overlap)
+            )
+            continue
 
-        if chunk:
-            chunks.append(chunk)
+        if not current:
+            current = paragraph
+            continue
 
-        start += step
+        candidate = f"{current}\n\n{paragraph}"
+        if len(candidate) <= chunk_size:
+            current = candidate
+            continue
+
+        chunks.append(current)
+        prefix = current[-overlap:] if overlap else ""
+        candidate = f"{prefix}\n\n{paragraph}" if prefix else paragraph
+        current = candidate if len(candidate) <= chunk_size else paragraph
+
+    if current:
+        chunks.append(current)
 
     return chunks
