@@ -9,14 +9,17 @@ from app.services.embeddings import generate_embedding
 
 
 _NEGATION_PATTERN = re.compile(
-    r"\\b(?:not|no|never|without|cannot|can't|не|нет|ни|никогда|без)\\b",
+    r"\b(?:not|no|never|without|cannot|can't|не|нет|ни|никогда|без)\b",
     re.IGNORECASE,
 )
 
 
 def _negation_signature(text: str) -> frozenset[str]:
     """Return explicit negation markers so contradictory text is not deduplicated."""
-    return frozenset(match.group(0).lower() for match in _NEGATION_PATTERN.finditer(text))
+    return frozenset(
+        match.group(0).lower()
+        for match in _NEGATION_PATTERN.finditer(text)
+    )
 
 
 
