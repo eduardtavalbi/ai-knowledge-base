@@ -102,7 +102,7 @@ async def test_ask_builds_numbered_context_and_returns_sources(client):
     assert response.status_code == 200
     body = response.json()
     assert body["answer"] == "Данные хранятся 30 дней. [Источник: 1]"
-    assert body["sources"] == chunks
+    assert body["sources"] == [chunks[0]]
     assert body["sources"][0]["source_page"] == 4
     assert body["sources"][0]["source_section"] == "Политика хранения данных"
 
