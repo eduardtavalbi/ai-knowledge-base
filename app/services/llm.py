@@ -12,6 +12,8 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+MAX_EXPANDED_QUERY_LENGTH = 200
+
 
 class GeminiServiceError(RuntimeError):
     """Base class for safe, provider-independent Gemini failures."""
@@ -215,6 +217,13 @@ async def expand_search_queries(
         for line in (response.text or "").splitlines():
             candidate = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip()
             candidate = candidate.strip("\"' ")
+            if (
+                not candidate
+                or len(candidate) > MAX_EXPANDED_QUERY_LENGTH
+                or candidate.startswith("```")
+            ):
+                continue
+
             is_duplicate = any(
                 candidate.casefold() == item.casefold()
                 or SequenceMatcher(
