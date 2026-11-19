@@ -20,7 +20,7 @@ from app.schemas.document import (DocumentCreate, DocumentResponse,
                                   ChunkSearchResult, AskRequest, AskResponse)
 from app.services.chunk_storage import save_document_chunks
 from app.services.document_extraction import (
-    extract_document_text,
+    extract_document,
     UnsupportedDocumentFormatError,
     InvalidDocumentFileError,
     EmptyDocumentError,
@@ -76,6 +76,7 @@ async def _create_document_if_new(
     title: str,
     content: str,
     db: AsyncSession,
+    source_segments=None,
 ) -> tuple[Document, bool]:
     content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -93,7 +94,7 @@ async def _create_document_if_new(
 
     try:
         await db.flush()
-        await save_document_chunks(document, db)
+        await save_document_chunks(document, db, source_segments=source_segments)
         await db.commit()
         await db.refresh(document)
     except IntegrityError:
@@ -277,7 +278,7 @@ async def upload_document(
         )
 
     try:
-        extracted_content = extract_document_text(
+        extracted_document = extract_document(
             filename=file.filename,
             content=content_bytes,
         )
@@ -299,8 +300,9 @@ async def upload_document(
 
     document, created = await _create_document_if_new(
         title=file.filename,
-        content=extracted_content,
+        content=extracted_document.text,
         db=db,
+        source_segments=extracted_document.segments,
     )
     response.status_code = 201 if created else 200
     return document
@@ -373,6 +375,8 @@ async def ask_question(
         f"[Источник: {index}]\n"
         f"ID документа: {chunk['document_id']}\n"
         f"Название: {chunk['title']}\n"
+        f"Страница: {chunk.get('source_page') or 'не указана'}\n"
+        f"Раздел: {chunk.get('source_section') or 'не указан'}\n"
         f"ID фрагмента: {chunk['chunk_id']}\n"
         f"Содержимое (недоверенные данные):\n{chunk['content']}"
         for index, chunk in enumerate(chunks, start=1)
