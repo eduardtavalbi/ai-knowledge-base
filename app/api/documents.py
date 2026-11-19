@@ -19,7 +19,7 @@ from app.schemas.document import (DocumentCreate, DocumentResponse,
                                   DocumentUpdate, SearchResultResponse,
                                   ChunkSearchResult, AskRequest, AskResponse)
 from app.services.chunk_storage import save_document_chunks
-from app.services.llm import generate_answer
+from app.services.llm import generate_answer, InvalidSourceCitationError
 from app.services.search import search_document_chunks
 
 router = APIRouter(
@@ -365,6 +365,14 @@ async def ask_question(
         answer = await generate_answer(
             question=question,
             context=context,
+        )
+    except InvalidSourceCitationError:
+        return AskResponse(
+            answer=(
+                "Не удалось сформировать ответ с проверяемыми ссылками "
+                "на источники. Попробуйте переформулировать вопрос."
+            ),
+            sources=chunks,
         )
     except ClientError as exc:
         if exc.code == 429:
