@@ -272,12 +272,33 @@ async def test_postgres_search_keeps_conflicting_policy_sources(postgres_session
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("title", "positive_text", "negative_text", "query"),
+    [
+        (
+            "Contractor VPN policy",
+            "Contractors must use VPN access.",
+            "Contractors must not use VPN access.",
+            "contractors VPN access",
+        ),
+        (
+            "Политика VPN для подрядчиков",
+            "Подрядчики должны использовать VPN.",
+            "Подрядчики не должны использовать VPN.",
+            "подрядчики VPN",
+        ),
+    ],
+)
 async def test_postgres_search_preserves_near_identical_chunks_with_opposite_negation(
     postgres_session,
+    title,
+    positive_text,
+    negative_text,
+    query,
 ):
     policy = Document(
-        title="Contractor VPN policy",
-        content="Contractors must use VPN access. Contractors must not use VPN access.",
+        title=title,
+        content=f"{positive_text} {negative_text}",
     )
     postgres_session.add(policy)
     await postgres_session.flush()
@@ -285,13 +306,13 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
     allowed = DocumentChunk(
         document_id=policy.id,
         chunk_index=0,
-        content="Contractors must use VPN access.",
+        content=positive_text,
         embedding=embedding(1.0),
     )
     prohibited = DocumentChunk(
         document_id=policy.id,
         chunk_index=1,
-        content="Contractors must not use VPN access.",
+        content=negative_text,
         embedding=embedding(0.999, 0.04),
     )
     postgres_session.add_all([allowed, prohibited])
@@ -301,7 +322,7 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
         patch(
             "app.services.llm.expand_search_queries",
             new_callable=AsyncMock,
-            return_value=["contractors VPN access"],
+            return_value=[query],
         ),
         patch(
             "app.services.search.generate_embedding",
@@ -309,7 +330,7 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
         ),
     ):
         results = await search_document_chunks(
-            "contractors VPN access",
+            query,
             postgres_session,
             limit=5,
         )
