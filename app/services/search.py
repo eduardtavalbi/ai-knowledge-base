@@ -150,8 +150,14 @@ async def search_document_chunks(
     scores: dict[int, float] = {}
     chunks_by_id: dict[int, dict] = {}
 
-    def add_ranked_results(rows) -> None:
-        for rank, (document, chunk, *_) in enumerate(rows, start=1):
+    def add_ranked_results(rows, *, semantic: bool = False) -> None:
+        for rank, (document, chunk, raw_score, *_) in enumerate(rows, start=1):
+            if semantic:
+                # Preserve the established minimum cosine-similarity threshold.
+                # pgvector returns cosine distance, so similarity = 1 - distance.
+                if raw_score is None or (1.0 - float(raw_score)) < 0.45:
+                    continue
+
             chunks_by_id[chunk.id] = {
                 "document_id": document.id,
                 "title": document.title,
@@ -175,12 +181,15 @@ async def search_document_chunks(
                 DocumentChunk,
                 DocumentChunk.document_id == Document.id,
             )
-            .where(DocumentChunk.embedding.is_not(None))
+            .where(
+                DocumentChunk.embedding.is_not(None),
+                distance <= 0.55,
+            )
             .order_by(distance)
             .limit(candidate_limit)
         )
         semantic_result = await db.execute(semantic_statement)
-        add_ranked_results(semantic_result.all())
+        add_ranked_results(semantic_result.all(), semantic=True)
 
         search_vector = func.to_tsvector(
             "simple",
