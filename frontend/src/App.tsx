@@ -32,6 +32,8 @@ type AskSource = {
   score: number
   chunk_id: number
   chunk_index: number
+  source_page?: number | null
+  source_section?: string | null
 }
 
 type AskResponse = {
@@ -172,7 +174,12 @@ function App() {
       }
 
       const document: DocumentItem = await response.json()
-      setDocuments((current) => [document, ...current])
+      setDocuments((current) => {
+        const alreadyListed = current.some((item) => item.id === document.id)
+        return alreadyListed
+          ? current.map((item) => item.id === document.id ? document : item)
+          : [document, ...current]
+      })
       setMessage(`Документ «${document.title}» загружен.`)
     } catch {
       setMessage('Ошибка загрузки. Проверь API и формат файла.')
@@ -515,10 +522,18 @@ function App() {
 
                       <p>{source.content}</p>
 
-                      <span>
-                        Фрагмент документа · релевантность:{' '}
-                        {(source.score * 100).toFixed(1)}%
-                      </span>
+                      <div className="ai-source-meta">
+                        <span>Фрагмент документа</span>
+                        {source.source_page != null && (
+                          <span>Страница {source.source_page}</span>
+                        )}
+                        {source.source_section && (
+                          <span>Раздел: {source.source_section}</span>
+                        )}
+                        <span>
+                          Релевантность: {(source.score * 100).toFixed(1)}%
+                        </span>
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -575,13 +590,13 @@ function App() {
               <div className="upload-icon"><Upload size={20} /></div>
               <div>
                 <h3>Пополнить базу знаний</h3>
-                <p>Загрузи документ, чтобы он стал доступен для поиска.</p>
+                <p>Поддерживаются PDF, DOCX, TXT и Markdown · до 2 МБ.</p>
               </div>
             </div>
             <input
               ref={fileInput}
               type="file"
-              accept=".txt,.md"
+              accept=".pdf,.docx,.txt,.md"
               hidden
               onChange={uploadFile}
             />
