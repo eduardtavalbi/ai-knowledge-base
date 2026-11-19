@@ -24,7 +24,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "document_chunks",
-        sa.Column("source_section", sa.String(length=500), nullable=True),
+        sa.Column("source_section", sa.Text(), nullable=True),
     )
 
 
