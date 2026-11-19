@@ -49,7 +49,7 @@ async def test_generate_answer_rejects_answer_without_source_citations():
     client.aio.models.generate_content = AsyncMock(
         return_value=SimpleNamespace(text="Срок хранения составляет 30 дней.")
     )
-    context = "[Источник: 1]\\nСрок хранения — 30 дней."
+    context = "[Источник: 1]\nСрок хранения — 30 дней."
 
     with patch("app.services.llm.get_gemini_client", return_value=client):
         with pytest.raises(ValueError, match="without source citations"):
@@ -62,7 +62,7 @@ async def test_generate_answer_rejects_malformed_source_citation():
     client.aio.models.generate_content = AsyncMock(
         return_value=SimpleNamespace(text="Ответ. [Источник: неизвестно]")
     )
-    context = "[Источник: 1]\\nПроверенный факт."
+    context = "[Источник: 1]\nПроверенный факт."
 
     with patch("app.services.llm.get_gemini_client", return_value=client):
         with pytest.raises(ValueError, match="invalid source citation"):
