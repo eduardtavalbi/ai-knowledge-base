@@ -2,7 +2,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.services.llm import InvalidSourceCitationError
+from app.services.llm import (
+    InvalidSourceCitationError,
+    GeminiRateLimitError,
+    GeminiTimeoutError,
+    GeminiUnavailableError,
+    GeminiConfigurationError,
+    GeminiRequestError,
+    GeminiEmptyResponseError,
+)
 
 
 def make_chunk(
@@ -162,3 +170,40 @@ async def test_ask_validates_limit(client):
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "status_code"),
+    [
+        (GeminiRateLimitError("provider details"), 429),
+        (GeminiTimeoutError("provider details"), 504),
+        (GeminiUnavailableError("provider details"), 503),
+        (GeminiConfigurationError("provider details"), 503),
+        (GeminiRequestError("provider details"), 502),
+        (GeminiEmptyResponseError("provider details"), 502),
+    ],
+)
+async def test_ask_maps_gemini_failures_to_safe_http_responses(
+    client, error, status_code
+):
+    with (
+        patch(
+            "app.api.documents.search_document_chunks",
+            new_callable=AsyncMock,
+            return_value=[make_chunk()],
+        ),
+        patch(
+            "app.api.documents.generate_answer",
+            new_callable=AsyncMock,
+            side_effect=error,
+        ),
+    ):
+        response = await client.post(
+            "/documents/ask",
+            json={"question": "Каков срок хранения?"},
+        )
+
+    assert response.status_code == status_code
+    assert "provider details" not in response.text
+    assert response.json()["detail"]
