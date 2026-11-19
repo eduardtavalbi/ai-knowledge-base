@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from io import BytesIO
-from zipfile import BadZipFile
 
 from docx import Document as DocxDocument
 from docx.table import Table
