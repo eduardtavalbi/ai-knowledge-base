@@ -79,7 +79,7 @@ def validate_source_citations(answer: str, context: str) -> str:
     unknown_sources = cited_sources - available_sources
     if unknown_sources:
         raise InvalidSourceCitationError(
-            "Model returned a citation to an unknown source"
+            "Model returned an unknown source citation"
         )
 
     return answer
