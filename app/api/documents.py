@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Respons
 
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, and_, or_
 from sqlalchemy.exc import IntegrityError
 
 from google.genai.errors import ServerError, ClientError
@@ -31,16 +31,28 @@ router = APIRouter(
 async def _find_document_by_hash(
     db: AsyncSession,
     content_sha256: str,
+    content: str | None = None,
     exclude_id: int | None = None,
 ) -> Document | None:
-    statement = select(Document).where(
-        Document.content_sha256 == content_sha256
-    )
+    conditions = [Document.content_sha256 == content_sha256]
+    if content is not None:
+        # Older databases may contain duplicate documents from before
+        # fingerprinting. The migration preserves those records with NULL
+        # fingerprints, so compare their content as a compatibility fallback.
+        conditions.append(
+            and_(
+                Document.content_sha256.is_(None),
+                Document.content == content,
+            )
+        )
+
+    statement = select(Document).where(or_(*conditions))
     if exclude_id is not None:
         statement = statement.where(Document.id != exclude_id)
+    statement = statement.order_by(Document.id).limit(1)
 
     result = await db.execute(statement)
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def _create_document_if_new(
@@ -50,7 +62,7 @@ async def _create_document_if_new(
 ) -> tuple[Document, bool]:
     content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-    existing = await _find_document_by_hash(db, content_sha256)
+    existing = await _find_document_by_hash(db, content_sha256, content=content)
     if existing is not None:
         return existing, False
 
@@ -181,6 +193,7 @@ async def update_document(
     duplicate = await _find_document_by_hash(
         db,
         content_sha256,
+        content=document_data.content,
         exclude_id=document_id,
     )
     if duplicate is not None:
@@ -205,7 +218,9 @@ async def update_document(
         await db.refresh(document)
     except IntegrityError as exc:
         await db.rollback()
-        duplicate = await _find_document_by_hash(db, content_sha256)
+        duplicate = await _find_document_by_hash(
+            db, content_sha256, content=document_data.content
+        )
         if duplicate is not None:
             raise HTTPException(
                 status_code=409,
