@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
-from google.genai.errors import ClientError, ServerError
+from app.services.llm import GeminiRateLimitError, GeminiUnavailableError
 
 from app.api.documents import ask_question
 from app.schemas.document import AskRequest
@@ -27,10 +27,7 @@ async def test_ask_returns_429_when_gemini_quota_exhausted(ask_request):
         }
     ]
 
-    error = ClientError(
-        429,
-        {"error": {"message": "Quota exceeded", "status": "RESOURCE_EXHAUSTED"}},
-    )
+    error = GeminiRateLimitError("Gemini rate limit reached")
 
     with (
         patch(
@@ -48,7 +45,7 @@ async def test_ask_returns_429_when_gemini_quota_exhausted(ask_request):
             await ask_question(ask_request, db=AsyncMock())
 
     assert exc_info.value.status_code == 429
-    assert "лимит запросов Gemini API" in exc_info.value.detail
+    assert exc_info.value.detail == "AI service rate limit reached. Please try again later."
 
 
 @pytest.mark.asyncio
@@ -64,10 +61,7 @@ async def test_ask_returns_503_when_gemini_unavailable(ask_request):
         }
     ]
 
-    error = ServerError(
-        503,
-        {"error": {"message": "Unavailable", "status": "UNAVAILABLE"}},
-    )
+    error = GeminiUnavailableError("Gemini server error")
 
     with (
         patch(
@@ -85,6 +79,9 @@ async def test_ask_returns_503_when_gemini_unavailable(ask_request):
             await ask_question(ask_request, db=AsyncMock())
 
     assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == (
+        "AI service is temporarily unavailable. Please try again later."
+    )
 
 @pytest.mark.asyncio
 async def test_ask_returns_answer_with_sources(ask_request):
