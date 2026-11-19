@@ -74,6 +74,7 @@ function App() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const [aiAnswer, setAiAnswer] = useState('')
@@ -157,11 +158,30 @@ function App() {
     }
   }
   async function uploadFile(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
+    const input = event.currentTarget
+    const file = input.files?.[0]
     if (!file) return
+
+    const allowedExtensions = ['.pdf', '.docx', '.txt', '.md']
+    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+    const maxFileSize = 2 * 1024 * 1024
+
+    if (!allowedExtensions.includes(extension)) {
+      setMessage('Неподдерживаемый формат. Выбери PDF, DOCX, TXT или MD.')
+      input.value = ''
+      return
+    }
+
+    if (file.size > maxFileSize) {
+      setMessage('Файл слишком большой. Максимальный размер — 2 МБ.')
+      input.value = ''
+      return
+    }
 
     const formData = new FormData()
     formData.append('file', file)
+    setUploading(true)
+    setMessage('')
 
     try {
       const response = await fetch(`${API_URL}/documents/upload`, {
@@ -170,7 +190,10 @@ function App() {
       })
 
       if (!response.ok) {
-        throw new Error('Не удалось загрузить документ')
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          errorData?.detail || `Не удалось загрузить документ (HTTP ${response.status})`,
+        )
       }
 
       const document: DocumentItem = await response.json()
@@ -180,11 +203,20 @@ function App() {
           ? current.map((item) => item.id === document.id ? document : item)
           : [document, ...current]
       })
-      setMessage(`Документ «${document.title}» загружен.`)
-    } catch {
-      setMessage('Ошибка загрузки. Проверь API и формат файла.')
+      setMessage(
+        response.status === 200
+          ? `Документ «${document.title}» уже есть в базе знаний.`
+          : `Документ «${document.title}» загружен.`,
+      )
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось загрузить документ. Проверь подключение к API.',
+      )
     } finally {
-      event.target.value = ''
+      setUploading(false)
+      input.value = ''
     }
   }
   async function deleteDocument(document: DocumentItem) {
@@ -602,9 +634,14 @@ function App() {
             />
             <button
               className="upload-button"
+              disabled={uploading}
               onClick={() => fileInput.current?.click()}
             >
-              <Plus size={17} /> Добавить документ
+              {uploading ? (
+                <><LoaderCircle className="spin" size={17} /> Загрузка…</>
+              ) : (
+                <><Plus size={17} /> Добавить документ</>
+              )}
             </button>
           </section>
           )}
