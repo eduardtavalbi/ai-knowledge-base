@@ -133,6 +133,27 @@ async def test_search_removes_near_duplicate_chunks():
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_search_filters_semantic_results_below_similarity_threshold():
+    document = make_document(1)
+    chunk = make_chunk(10, 1, "Unrelated content.")
+    db = AsyncMock()
+    db.execute.side_effect = [
+        result([(document, chunk, 0.56)]),  # cosine similarity = 0.44
+        result([]),  # no full-text match
+    ]
+
+    with (
+        patch("app.services.llm.expand_search_queries", new_callable=AsyncMock,
+              return_value=["Python"]),
+        patch("app.services.search.generate_embedding",
+              return_value=[0.1] * 384),
+    ):
+        chunks = await search_document_chunks("Python", db)
+
+    assert chunks == []
+
+
 async def test_search_returns_empty_when_no_retrievers_match():
     db = AsyncMock()
     db.execute.side_effect = [result([]), result([])]
