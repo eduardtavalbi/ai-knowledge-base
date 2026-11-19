@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.llm import generate_answer
+from app.services.llm import (
+    generate_answer,
+    GeminiEmptyResponseError,
+    GeminiTimeoutError,
+    GeminiUnavailableError,
+)
 
 
 @pytest.mark.asyncio
@@ -44,7 +49,7 @@ async def test_generate_answer_rejects_empty_model_response():
     )
 
     with patch("app.services.llm.get_gemini_client", return_value=client):
-        with pytest.raises(RuntimeError, match="empty answer"):
+        with pytest.raises(GeminiEmptyResponseError, match="empty answer"):
             await generate_answer("Вопрос", "[Источник: 1] Данные")
 
 
@@ -79,3 +84,27 @@ async def test_generate_answer_accepts_citations_present_in_context():
 
     assert "[Источник: 1]" in answer
     assert "[Источник: 2]" in answer
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_normalizes_timeout_errors():
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        side_effect=TimeoutError("sensitive provider details")
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        with pytest.raises(GeminiTimeoutError):
+            await generate_answer("Вопрос", "[Источник: 1] Данные")
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_normalizes_network_errors():
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        side_effect=OSError("connection details")
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        with pytest.raises(GeminiUnavailableError):
+            await generate_answer("Вопрос", "[Источник: 1] Данные")
