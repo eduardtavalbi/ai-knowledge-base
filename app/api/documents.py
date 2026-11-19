@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, and_, or_
 from sqlalchemy.exc import IntegrityError
 
-from google.genai.errors import ServerError, ClientError
+import logging
 
 from app.db.session import get_db
 from app.models.document import  Document
@@ -19,8 +19,19 @@ from app.schemas.document import (DocumentCreate, DocumentResponse,
                                   DocumentUpdate, SearchResultResponse,
                                   ChunkSearchResult, AskRequest, AskResponse)
 from app.services.chunk_storage import save_document_chunks
-from app.services.llm import generate_answer, InvalidSourceCitationError
+from app.services.llm import (
+    generate_answer,
+    InvalidSourceCitationError,
+    GeminiConfigurationError,
+    GeminiRateLimitError,
+    GeminiUnavailableError,
+    GeminiTimeoutError,
+    GeminiRequestError,
+    GeminiEmptyResponseError,
+)
 from app.services.search import search_document_chunks
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/documents",
@@ -374,26 +385,35 @@ async def ask_question(
             ),
             sources=chunks,
         )
-    except ClientError as exc:
-        if exc.code == 429:
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    "Исчерпан лимит запросов Gemini API. "
-                    "Попробуйте после восстановления квоты."
-                ),
-            ) from exc
-
+    except GeminiRateLimitError as exc:
+        logger.warning("Gemini rate limit reached")
         raise HTTPException(
-            status_code=502,
-            detail="AI service rejected the request.",
+            status_code=429,
+            detail="AI service rate limit reached. Please try again later.",
         ) from exc
-
-    except ServerError as exc:
-        print(f"Gemini ServerError: {exc!r}")
+    except GeminiTimeoutError as exc:
+        logger.warning("Gemini request timed out")
+        raise HTTPException(
+            status_code=504,
+            detail="AI service timed out. Please try again later.",
+        ) from exc
+    except GeminiUnavailableError as exc:
+        logger.warning("Gemini service is unavailable")
         raise HTTPException(
             status_code=503,
             detail="AI service is temporarily unavailable. Please try again later.",
+        ) from exc
+    except GeminiConfigurationError as exc:
+        logger.error("Gemini API is not configured")
+        raise HTTPException(
+            status_code=503,
+            detail="AI service is not configured.",
+        ) from exc
+    except (GeminiRequestError, GeminiEmptyResponseError) as exc:
+        logger.warning("Gemini could not complete the request: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="AI service could not process the request.",
         ) from exc
 
     return AskResponse(
