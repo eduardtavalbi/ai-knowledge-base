@@ -29,6 +29,7 @@ from app.services.document_extraction import (
 )
 from app.services.llm import (
     generate_answer,
+    extract_source_citations,
     InvalidSourceCitationError,
     GeminiConfigurationError,
     GeminiRateLimitError,
@@ -429,7 +430,14 @@ async def ask_question(
             detail="AI service could not process the request.",
         ) from exc
 
+    cited_source_ids = extract_source_citations(answer)
+    cited_chunks = [
+        chunk
+        for index, chunk in enumerate(chunks, start=1)
+        if index in cited_source_ids
+    ]
+
     return AskResponse(
         answer=answer,
-        sources=chunks,
+        sources=cited_chunks,
     )
