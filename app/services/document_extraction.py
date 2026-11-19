@@ -109,37 +109,40 @@ def _extract_pdf_segments(content: bytes) -> list[SourceSegment]:
         ]
     except InvalidDocumentFileError:
         raise
-    except (PdfReadError, EOFError, ValueError, OSError) as exc:
+    except Exception as exc:
         raise InvalidDocumentFileError("Could not read the PDF file") from exc
 
 
 def _extract_docx_segments(content: bytes) -> list[SourceSegment]:
     try:
         document = DocxDocument(BytesIO(content))
+        segments: list[SourceSegment] = []
+        current_section: str | None = None
+
+        for block in document.iter_inner_content():
+            if isinstance(block, Paragraph):
+                text = block.text.strip()
+                if not text:
+                    continue
+                style_name = block.style.name if block.style is not None else ""
+                if style_name.startswith("Heading"):
+                    current_section = text
+                segments.append(
+                    SourceSegment(text=text, section_title=current_section)
+                )
+            elif isinstance(block, Table):
+                for row in block.rows:
+                    text = " | ".join(
+                        cell.text.strip() for cell in row.cells
+                    ).strip()
+                    if text:
+                        segments.append(
+                            SourceSegment(
+                                text=text,
+                                section_title=current_section,
+                            )
+                        )
+        return segments
     except Exception as exc:
-        # python-docx may raise PackageNotFoundError as well as ZIP/parser errors.
+        # Treat parser errors from malformed DOCX packages as client input errors.
         raise InvalidDocumentFileError("Could not read the DOCX file") from exc
-
-    segments: list[SourceSegment] = []
-    current_section: str | None = None
-
-    for block in document.iter_inner_content():
-        if isinstance(block, Paragraph):
-            text = block.text.strip()
-            if not text:
-                continue
-            style_name = block.style.name if block.style is not None else ""
-            if style_name.startswith("Heading"):
-                current_section = text
-            segments.append(
-                SourceSegment(text=text, section_title=current_section)
-            )
-        elif isinstance(block, Table):
-            for row in block.rows:
-                text = " | ".join(cell.text.strip() for cell in row.cells).strip()
-                if text:
-                    segments.append(
-                        SourceSegment(text=text, section_title=current_section)
-                    )
-
-    return segments
