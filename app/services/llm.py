@@ -2,6 +2,7 @@ import logging
 import re
 from difflib import SequenceMatcher
 
+import httpx
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError, ClientError, ServerError
@@ -49,13 +50,13 @@ def validate_source_citations(answer: str, context: str) -> str:
     available_sources = {
         int(source_id)
         for source_id in re.findall(
-            r"(?m)^\\[Источник:\\s*(\\d+)\\]\\s*$", context
+            r"(?m)^\[Источник:\s*(\d+)\]\s*$", context
         )
     }
-    citation_markers = re.findall(r"\\[Источник:[^\\]]*\\]", answer)
+    citation_markers = re.findall(r"\[Источник:[^\]]*\]", answer)
 
     for marker in citation_markers:
-        match = re.fullmatch(r"\\[Источник:\\s*(\\d+)\\s*\\]", marker)
+        match = re.fullmatch(r"\[Источник:\s*(\d+)\s*\]", marker)
         if match is None or int(match.group(1)) not in available_sources:
             raise InvalidSourceCitationError(
                 f"Model returned an unknown source citation: {marker}"
@@ -68,8 +69,8 @@ def get_gemini_client():
     if not settings.gemini_api_key:
         raise GeminiConfigurationError("GEMINI_API_KEY is not configured")
 
-    # Keep retries in one place: the SDK handles transient HTTP and transport
-    # failures with bounded exponential backoff. Avoid a second retry loop here.
+    # Keep retries in one place: the SDK handles transient HTTP failures
+    # with bounded exponential backoff. Avoid a second retry loop here.
     return genai.Client(
         api_key=settings.gemini_api_key,
         http_options=types.HttpOptions(
@@ -99,14 +100,14 @@ def _raise_gemini_service_error(exc: Exception) -> None:
         code = getattr(exc, "code", None)
         if code == 429:
             raise GeminiRateLimitError("Gemini rate limit reached") from exc
-        if code is None or code >= 500:
+        if code is None or (isinstance(code, int) and code >= 500):
             raise GeminiUnavailableError("Gemini API is unavailable") from exc
         raise GeminiRequestError("Gemini rejected the request") from exc
 
-    if isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.casefold():
+    if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
         raise GeminiTimeoutError("Gemini request timed out") from exc
 
-    if isinstance(exc, OSError):
+    if isinstance(exc, (OSError, httpx.TransportError)):
         raise GeminiUnavailableError("Gemini network transport failed") from exc
 
     raise exc
@@ -118,8 +119,8 @@ async def generate_answer(question: str, context: str) -> str:
         response = await client.aio.models.generate_content(
             model=settings.gemini_model,
             contents=(
-                f"Контекст:\\n{context}\\n\\n"
-                f"Вопрос:\\n{question}"
+                f"Контекст:\n{context}\n\n"
+                f"Вопрос:\n{question}"
             ),
             config=types.GenerateContentConfig(
                 system_instruction=(
@@ -171,7 +172,7 @@ async def expand_search_queries(
                 "Сформулируй до двух коротких альтернативных поисковых "
                 "запросов для поиска в базе знаний. Сохрани исходный смысл, "
                 "не отвечай на вопрос и не добавляй факты. Каждый вариант "
-                "выведи с новой строки, без пояснений.\\n\\n"
+                "выведи с новой строки, без пояснений.\n\n"
                 f"Исходный запрос: {original}"
             ),
             config=types.GenerateContentConfig(
@@ -184,8 +185,8 @@ async def expand_search_queries(
 
         candidates = [original]
         for line in (response.text or "").splitlines():
-            candidate = re.sub(r"^\\s*(?:[-*•]|\\d+[.)])\\s*", "", line).strip()
-            candidate = candidate.strip("\\\"' ")
+            candidate = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip()
+            candidate = candidate.strip("\"' ")
             is_duplicate = any(
                 candidate.casefold() == item.casefold()
                 or SequenceMatcher(
