@@ -220,3 +220,48 @@ async def test_ask_maps_gemini_failures_to_safe_http_responses(
     assert response.status_code == status_code
     assert "provider details" not in response.text
     assert response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_ask_returns_every_source_cited_in_conflicting_answer(client):
+    chunks = [
+        make_chunk(
+            document_id=10,
+            title="VPN policy 2024",
+            chunk_id=301,
+            text="External contractors do not need VPN access.",
+        ),
+        make_chunk(
+            document_id=11,
+            title="VPN policy 2026",
+            chunk_id=302,
+            text="External contractors must use VPN access.",
+        ),
+    ]
+    answer = (
+        "Политика 2024 года разрешает доступ без VPN [Источник: 1], "
+        "а политика 2026 года требует VPN [Источник: 2]. "
+        "Источники противоречат друг другу."
+    )
+
+    with (
+        patch(
+            "app.api.documents.search_document_chunks",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ),
+        patch(
+            "app.api.documents.generate_answer",
+            new_callable=AsyncMock,
+            return_value=answer,
+        ),
+    ):
+        response = await client.post(
+            "/documents/ask",
+            json={"question": "Нужен ли подрядчикам VPN?", "limit": 2},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == answer
+    assert body["sources"] == chunks
