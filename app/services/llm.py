@@ -11,6 +11,30 @@ from google.genai.errors import ServerError
 from app.core.config import settings
 
 
+class InvalidSourceCitationError(ValueError):
+    """Raised when the model cites a source that is absent from its context."""
+
+
+def validate_source_citations(answer: str, context: str) -> str:
+    """Reject citation markers that do not map to a numbered context source."""
+    available_sources = {
+        int(source_id)
+        for source_id in re.findall(
+            r"(?m)^\\[Источник:\\s*(\\d+)\\]\\s*$", context
+        )
+    }
+    citation_markers = re.findall(r"\\[Источник:[^\\]]*\\]", answer)
+
+    for marker in citation_markers:
+        match = re.fullmatch(r"\\[Источник:\\s*(\\d+)\\s*\\]", marker)
+        if match is None or int(match.group(1)) not in available_sources:
+            raise InvalidSourceCitationError(
+                f"Model returned an unknown source citation: {marker}"
+            )
+
+    return answer
+
+
 def get_gemini_client():
     if not settings.gemini_api_key:
         raise RuntimeError("GEMINI_API_KEY is not configured")
@@ -54,7 +78,7 @@ async def generate_answer(question: str, context: str) -> str:
             if not answer:
                 raise RuntimeError("Gemini returned an empty answer")
 
-            return answer.strip()
+            return validate_source_citations(answer.strip(), context)
 
         except ServerError:
             if attempt == 2:
