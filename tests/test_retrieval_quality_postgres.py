@@ -339,3 +339,59 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
     assert allowed.id in result_ids
     assert prohibited.id in result_ids
     assert len(results) == 2
+
+
+
+@pytest.mark.asyncio
+async def test_postgres_search_keeps_identical_chunks_from_separate_documents(
+    postgres_session,
+):
+    first_doc = Document(
+        title="Security handbook",
+        content="VPN access requires multi-factor authentication.",
+    )
+    second_doc = Document(
+        title="Remote access policy",
+        content="VPN access requires multi-factor authentication.",
+    )
+    postgres_session.add_all([first_doc, second_doc])
+    await postgres_session.flush()
+
+    first_chunk = DocumentChunk(
+        document_id=first_doc.id,
+        chunk_index=0,
+        content="VPN access requires multi-factor authentication.",
+        embedding=embedding(1.0),
+    )
+    second_chunk = DocumentChunk(
+        document_id=second_doc.id,
+        chunk_index=0,
+        content="VPN access requires multi-factor authentication.",
+        embedding=embedding(0.999, 0.04),
+    )
+    postgres_session.add_all([first_chunk, second_chunk])
+    await postgres_session.commit()
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=["VPN access authentication"],
+        ),
+        patch(
+            "app.services.search.generate_embedding",
+            return_value=embedding(1.0),
+        ),
+    ):
+        results = await search_document_chunks(
+            "VPN access authentication",
+            postgres_session,
+            limit=5,
+        )
+
+    result_ids = {item["chunk_id"] for item in results}
+    result_document_ids = {item["document_id"] for item in results}
+
+    assert result_ids == {first_chunk.id, second_chunk.id}
+    assert result_document_ids == {first_doc.id, second_doc.id}
+    assert len(results) == 2
