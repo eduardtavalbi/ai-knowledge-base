@@ -3,7 +3,34 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.search import search_document_chunks
+from app.services.search import _negation_signature, search_document_chunks
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Contractors must not use VPN.", frozenset({"not"})),
+        ("There is no VPN access.", frozenset({"no"})),
+        ("Never share credentials.", frozenset({"never"})),
+        ("Access is available without approval.", frozenset({"without"})),
+        ("The system cannot connect.", frozenset({"cannot"})),
+        ("The user can't connect.", frozenset({"can't"})),
+        ("Сотрудникам не разрешён доступ.", frozenset({"не"})),
+        ("Нет доступа к системе.", frozenset({"нет"})),
+        ("Ни один подрядчик не допущен.", frozenset({"ни", "не"})),
+        ("Сотрудник никогда не передаёт пароль.", frozenset({"никогда", "не"})),
+        ("Доступ без согласования запрещён.", frozenset({"без"})),
+    ],
+)
+def test_negation_signature_detects_supported_english_and_russian_markers(
+    text, expected
+):
+    assert _negation_signature(text) == expected
+
+
+def test_negation_signature_is_case_insensitive_and_ignores_substrings():
+    assert _negation_signature("NOT allowed") == frozenset({"not"})
+    assert _negation_signature("notebook and nobody") == frozenset()
 
 
 def make_document(document_id: int, title: str = "Test"):
