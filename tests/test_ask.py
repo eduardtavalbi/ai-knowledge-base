@@ -111,12 +111,12 @@ async def test_ask_returns_answer_with_sources(ask_request):
         patch(
             "app.api.documents.generate_answer",
             new_callable=AsyncMock,
-            return_value="Python — язык программирования.",
+            return_value="Python — язык программирования. [Источник: 1]",
         ) as mock_generate,
     ):
         response = await ask_question(ask_request, db=AsyncMock())
 
-    assert response.answer == "Python — язык программирования."
+    assert response.answer == "Python — язык программирования. [Источник: 1]"
     assert [source.model_dump() for source in response.sources] == chunks
     mock_search.assert_awaited_once()
     mock_generate.assert_awaited_once()
