@@ -54,7 +54,7 @@ async def test_generate_answer_rejects_citation_to_unknown_source():
     client.aio.models.generate_content = AsyncMock(
         return_value=SimpleNamespace(text="Ответ. [Источник: 2]")
     )
-    context = "[Источник: 1]\\nСодержимое: проверенный факт."
+    context = "[Источник: 1]\nСодержимое: проверенный факт."
 
     with patch("app.services.llm.get_gemini_client", return_value=client):
         with pytest.raises(ValueError, match="unknown source citation"):
@@ -70,8 +70,8 @@ async def test_generate_answer_accepts_citations_present_in_context():
         )
     )
     context = (
-        "[Источник: 1]\\nПервый фрагмент.\\n\\n"
-        "[Источник: 2]\\nВторой фрагмент."
+        "[Источник: 1]\nПервый фрагмент.\n\n"
+        "[Источник: 2]\nВторой фрагмент."
     )
 
     with patch("app.services.llm.get_gemini_client", return_value=client):
