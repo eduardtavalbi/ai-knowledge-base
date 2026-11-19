@@ -269,3 +269,52 @@ async def test_postgres_search_keeps_conflicting_policy_sources(postgres_session
     assert old_chunk.id in result_ids
     assert current_chunk.id in result_ids
     assert len(results) == 2
+
+
+@pytest.mark.asyncio
+async def test_postgres_search_preserves_near_identical_chunks_with_opposite_negation(
+    postgres_session,
+):
+    policy = Document(
+        title="Contractor VPN policy",
+        content="Contractors must use VPN access. Contractors must not use VPN access.",
+    )
+    postgres_session.add(policy)
+    await postgres_session.flush()
+
+    allowed = DocumentChunk(
+        document_id=policy.id,
+        chunk_index=0,
+        content="Contractors must use VPN access.",
+        embedding=embedding(1.0),
+    )
+    prohibited = DocumentChunk(
+        document_id=policy.id,
+        chunk_index=1,
+        content="Contractors must not use VPN access.",
+        embedding=embedding(0.999, 0.04),
+    )
+    postgres_session.add_all([allowed, prohibited])
+    await postgres_session.commit()
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=["contractors VPN access"],
+        ),
+        patch(
+            "app.services.search.generate_embedding",
+            return_value=embedding(1.0),
+        ),
+    ):
+        results = await search_document_chunks(
+            "contractors VPN access",
+            postgres_session,
+            limit=5,
+        )
+
+    result_ids = {item["chunk_id"] for item in results}
+    assert allowed.id in result_ids
+    assert prohibited.id in result_ids
+    assert len(results) == 2
