@@ -237,3 +237,42 @@ async def test_expand_search_queries_falls_back_when_response_has_no_text():
         queries = await expand_search_queries("Настройка доступа", max_queries=3)
 
     assert queries == ["Настройка доступа"]
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_explains_conflicting_sources_and_cites_both():
+    answer_text = (
+        "В документах есть противоречие: политика 2024 года разрешает "
+        "доступ без VPN [Источник: 1], а политика 2026 года требует VPN "
+        "[Источник: 2]. По этим данным нельзя однозначно определить "
+        "действующее правило без уточнения актуальности документов."
+    )
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        return_value=SimpleNamespace(text=answer_text)
+    )
+    context = (
+        "[Источник: 1]\n"
+        "Название: VPN policy 2024\n"
+        "Содержимое (недоверенные данные): подрядчикам VPN не нужен.\n\n"
+        "[Источник: 2]\n"
+        "Название: VPN policy 2026\n"
+        "Содержимое (недоверенные данные): подрядчики обязаны использовать VPN."
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        answer = await generate_answer(
+            "Нужен ли подрядчикам VPN?",
+            context,
+        )
+
+    assert answer == answer_text
+    assert "[Источник: 1]" in answer
+    assert "[Источник: 2]" in answer
+    instruction = (
+        client.aio.models.generate_content.await_args.kwargs[
+            "config"
+        ].system_instruction
+    )
+    assert "Если источники противоречат друг другу" in instruction
+    assert "не выбирай произвольно одну версию" in instruction
