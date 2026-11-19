@@ -82,6 +82,27 @@ async def test_generate_answer_rejects_empty_model_response():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        SimpleNamespace(),
+        type(
+            "BlockedResponse",
+            (),
+            {"text": property(lambda self: (_ for _ in ()).throw(ValueError("no text candidate")))},
+        )(),
+    ],
+)
+async def test_generate_answer_handles_response_without_readable_text(response):
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(return_value=response)
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        with pytest.raises(GeminiEmptyResponseError):
+            await generate_answer("Вопрос", "[Источник: 1] Данные")
+
+
+@pytest.mark.asyncio
 async def test_generate_answer_rejects_citation_to_unknown_source():
     client = MagicMock()
     client.aio.models.generate_content = AsyncMock(
