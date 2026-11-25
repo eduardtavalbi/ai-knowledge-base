@@ -2,6 +2,8 @@ import asyncio
 import hashlib
 from collections.abc import Sequence
 
+from app.api.auth import get_current_user
+from app.models.user import User
 from app.services.embeddings import generate_embedding
 from app.services.search import search_documents
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
@@ -55,9 +57,10 @@ async def _find_document_by_hash(
     db: AsyncSession,
     content_sha256: str,
     content: str | None = None,
+    user_id: int,
     exclude_id: int | None = None,
 ) -> Document | None:
-    conditions = [Document.content_sha256 == content_sha256]
+    conditions = [Document.user_id == user_id, Document.content_sha256 == content_sha256]
     if content is not None:
         # Older databases may contain duplicate documents from before
         # fingerprinting. The migration preserves those records with NULL
@@ -83,14 +86,16 @@ async def _create_document_if_new(
     content: str,
     db: AsyncSession,
     source_segments: Sequence[SourceSegment] | None = None,
+    user_id: int,
 ) -> tuple[Document, bool]:
     content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-    existing = await _find_document_by_hash(db, content_sha256, content=content)
+    existing = await _find_document_by_hash(db, content_sha256, content=content, user_id=user_id)
     if existing is not None:
         return existing, False
 
     document = Document(
+        user_id=user_id,
         title=title,
         content=content,
         content_sha256=content_sha256,
@@ -108,7 +113,7 @@ async def _create_document_if_new(
         # A concurrent request may have inserted the same content after
         # the initial lookup. The unique constraint is the source of truth.
         existing = await _find_document_by_hash(
-            db, content_sha256, content=content
+            db, content_sha256, content=content, user_id=user_id
         )
         if existing is not None:
             return existing, False
@@ -121,10 +126,11 @@ async def _create_document_if_new(
 
 @router.get("/", response_model=list[DocumentResponse])
 async def get_documents(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(Document)
+        select(Document).where(Document.user_id == user.id)
     )
 
     documents = result.scalars().all()
@@ -136,6 +142,7 @@ async def search_documents_endpoint(
     q: str,
     db: AsyncSession = Depends(get_db),
     limit: int = 5,
+    user: User = Depends(get_current_user),
 ):
     if not q.strip():
         raise HTTPException(
@@ -153,6 +160,7 @@ async def search_documents_endpoint(
         query=q,
         db=db,
         limit=limit,
+        user_id=user.id,
     )
 
     return documents
@@ -161,9 +169,11 @@ async def search_documents_endpoint(
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_documents(
     document_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    document = await db.get(Document, document_id)
+    result = await db.execute(select(Document).where(Document.id == document_id, Document.user_id == user.id))
+    document = result.scalars().first()
 
     if document is None:
         raise HTTPException(
@@ -181,7 +191,7 @@ async def delete_documents(
 ):
     result = await db.execute(
         select(Document)
-        .where(Document.id == document_id)
+        .where(Document.id == document_id, Document.user_id == user.id)
         .with_for_update()
     )
     document = result.scalars().first()
@@ -213,6 +223,7 @@ async def update_document(
     document_id: int,
     document_data: DocumentUpdate,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     # Lock the row before checking the new fingerprint or replacing chunks.
     # Concurrent updates/deletes for this document then serialize in PostgreSQL.
@@ -242,6 +253,7 @@ async def update_document(
         content_sha256,
         content=document_data.content,
         exclude_id=document_id,
+        user_id=user.id,
     )
     if duplicate is not None:
         raise HTTPException(
@@ -269,7 +281,7 @@ async def update_document(
     except IntegrityError as exc:
         await db.rollback()
         duplicate = await _find_document_by_hash(
-            db, content_sha256, content=document_data.content
+            db, content_sha256, content=document_data.content, user_id=user.id
         )
         if duplicate is not None:
             raise HTTPException(
@@ -290,7 +302,8 @@ async def update_document(
 async def upload_document(
     response: Response,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     if not file.filename:
         raise HTTPException(
@@ -338,6 +351,7 @@ async def upload_document(
         content=extracted_document.text,
         db=db,
         source_segments=extracted_document.segments,
+        user_id=user.id,
     )
     response.status_code = 201 if created else 200
     return document
@@ -347,11 +361,13 @@ async def create_document(
     document: DocumentCreate,
     response: Response,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     created_document, created = await _create_document_if_new(
         title=document.title,
         content=document.content,
         db=db,
+        user_id=user.id,
     )
     response.status_code = 201 if created else 200
     return created_document
@@ -362,6 +378,7 @@ async def search_document_chunks_endpoint(
     q: str,
     db: AsyncSession = Depends(get_db),
     limit: int = 5,
+    user: User = Depends(get_current_user),
 ):
     if not q.strip():
         raise HTTPException(
@@ -379,12 +396,14 @@ async def search_document_chunks_endpoint(
         query=q,
         db=db,
         limit=limit,
+        user_id=user.id,
     )
 
 @router.post("/ask", response_model=AskResponse)
 async def ask_question(
     request: AskRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     question = request.question.strip()
 
@@ -398,6 +417,7 @@ async def ask_question(
         query=question,
         db=db,
         limit=request.limit,
+        user_id=user.id,
     )
 
     if not chunks:
