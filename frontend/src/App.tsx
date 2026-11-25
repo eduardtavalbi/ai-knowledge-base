@@ -83,10 +83,26 @@ function App() {
     return () => window.removeEventListener('keydown', handleModalKeyDown)
   }, [editingDocument, selectedDocument, savingEdit])
 
+  async function requestApi(
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> {
+    try {
+      const response = await requestApi(input, init)
+      // An HTTP error still proves that the API is reachable; only a failed
+      // network request should switch the connection indicator to offline.
+      setApiStatus('online')
+      return response
+    } catch (error) {
+      setApiStatus('offline')
+      throw error
+    }
+  }
+
   async function loadDocuments() {
     setDocumentsLoading(true)
     try {
-      const response = await fetch(`${API_URL}/documents/`)
+      const response = await requestApi(`${API_URL}/documents/`)
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
@@ -121,7 +137,7 @@ function App() {
     setResults([])
 
     try {
-      const response = await fetch(`${API_URL}/documents/ask`, {
+      const response = await requestApi(`${API_URL}/documents/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -193,7 +209,7 @@ function App() {
     setMessage('')
 
     try {
-      const response = await fetch(`${API_URL}/documents/upload`, {
+      const response = await requestApi(`${API_URL}/documents/upload`, {
         method: 'POST',
         body: formData,
       })
@@ -243,7 +259,7 @@ function App() {
   setMessage('')
 
   try {
-    const response = await fetch(
+    const response = await requestApi(
       `${API_URL}/documents/${document.id}`,
       { method: 'DELETE' },
     )
@@ -289,7 +305,7 @@ function App() {
     setSavingEdit(true)
 
     try {
-      const response = await fetch(
+      const response = await requestApi(
         `${API_URL}/documents/${editingDocument.id}`,
         {
           method: 'PUT',
