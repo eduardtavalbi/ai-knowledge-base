@@ -207,6 +207,32 @@ async def test_user_can_list_and_revoke_only_own_sessions(unauthenticated_client
     )
     assert revoked_session_profile.status_code == 401
 
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "another-user@example.com", "password": "a-long-test-password"},
+    )
+    another_login = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "another-user@example.com", "password": "a-long-test-password"},
+    )
+    another_token = another_login.json()["access_token"]
+    another_session_id = jwt.decode(
+        another_token,
+        settings.auth_secret_key,
+        algorithms=["HS256"],
+    )["sid"]
+
+    cross_user_revoke = await unauthenticated_client.delete(
+        f"/auth/sessions/{another_session_id}",
+        headers={"Authorization": f"Bearer {first_token}"},
+    )
+    assert cross_user_revoke.status_code == 404
+    another_profile = await unauthenticated_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {another_token}"},
+    )
+    assert another_profile.status_code == 200
+
 
 @pytest.mark.asyncio
 async def test_logout_revokes_session_even_after_access_token_expiry(unauthenticated_client, monkeypatch):
