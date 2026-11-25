@@ -117,6 +117,8 @@ Configure the following variables in `.env`:
 
 ```dotenv
 APP_NAME=AI Knowledge Base API
+ENVIRONMENT=development
+SECURITY_AUDIT_RETENTION_DAYS=90
 DEBUG=false
 AUTH_SECRET_KEY=GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
 REFRESH_TOKEN_COOKIE_SECURE=false
@@ -167,7 +169,7 @@ To run the API in Docker as well (instead of starting it with the local Python c
 docker compose up -d --build api
 ```
 
-The API container applies pending Alembic migrations before starting Uvicorn and exposes `/health` as a container health check. If you are upgrading a database that already contains documents, put `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` in `.env` before starting it. Do not start the containerized API and the local Uvicorn server at the same time because both use port `8000`.
+The API container applies pending Alembic migrations before starting Uvicorn. `/health` is a process liveness check; `/ready` verifies database connectivity and is used for the container readiness/health check. If you are upgrading a database that already contains documents, put `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` in `.env` before starting it. Do not start the containerized API and the local Uvicorn server at the same time because both use port `8000`.
 
 ### 4. Set up the Python environment
 
@@ -272,6 +274,20 @@ ai-knowledge-base/
 ## Project Status
 
 Mindbase is evolving into a multi-tenant commercial application. Each account owns a private document collection; document CRUD, deduplication, hybrid retrieval, and RAG context are scoped to the authenticated user.
+
+## Production Operations
+
+Set `ENVIRONMENT=production` to enable strict startup validation. Production requires `DEBUG=false`, a unique random `AUTH_SECRET_KEY` of at least 32 characters, `REFRESH_TOKEN_COOKIE_SECURE=true`, HTTPS-only `FRONTEND_ORIGINS` and `FRONTEND_PUBLIC_URL`, and SMTP host/from-address values when email verification is required. `SMTP_STARTTLS` and `SMTP_USE_SSL` are mutually exclusive. Keep secrets in your deployment platform's secret manager; inject them as environment variables and never bake them into images or commit them to the repository.
+
+`/health` reports process liveness. `/ready` executes a lightweight database query and returns HTTP 503 when PostgreSQL is unavailable. Configure your platform to monitor both endpoints and alert on repeated readiness failures, elevated HTTP 5xx/429 rates, API restarts, database storage pressure, and backup failures. Send application logs to a centralized log service and avoid logging request bodies, passwords, cookies, access tokens, or recovery tokens.
+
+Security audit retention defaults to 90 days and is configured with `SECURITY_AUDIT_RETENTION_DAYS`. The application deliberately does not delete audit history automatically on request traffic. Schedule the cleanup command as a separate daily/weekly deployment job:
+
+```bash
+python -m scripts.cleanup_security_audit
+```
+
+Override the configured period when needed with `--retention-days 90`. Run it using the same production database credentials as the API. Confirm legal, contractual, and incident-response retention requirements before selecting a period. Back up PostgreSQL regularly, encrypt backups at rest, restrict restore access, and periodically test restores.
 
 ## Security Notes
 
