@@ -1,10 +1,12 @@
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     app_name: str = "AI Knowledge Base API"
+    environment: str = "development"
+    security_audit_retention_days: int = Field(default=90, gt=0)
     debug: bool = False
     database_url: str = (
         "postgresql+asyncpg://postgres:CHANGE_ME@localhost:5434/knowledge_base"
@@ -43,6 +45,28 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-chat"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
+
+    @model_validator(mode="after")
+    def validate_runtime_configuration(self):
+        if self.environment not in {"development", "test", "production"}:
+            raise ValueError("ENVIRONMENT must be development, test, or production")
+        if self.smtp_starttls and self.smtp_use_ssl:
+            raise ValueError("SMTP_STARTTLS and SMTP_USE_SSL cannot both be enabled")
+        if self.environment == "production":
+            if self.debug:
+                raise ValueError("DEBUG must be false in production")
+            if len(self.auth_secret_key) < 32 or self.auth_secret_key.startswith("CHANGE_ME"):
+                raise ValueError("AUTH_SECRET_KEY must be a unique random secret of at least 32 characters in production")
+            if not self.refresh_token_cookie_secure:
+                raise ValueError("REFRESH_TOKEN_COOKIE_SECURE must be true in production")
+            origins = [item.strip() for item in self.frontend_origins.split(",") if item.strip()]
+            if not origins or any(not item.startswith("https://") for item in origins):
+                raise ValueError("FRONTEND_ORIGINS must contain only HTTPS origins in production")
+            if not self.frontend_public_url.startswith("https://"):
+                raise ValueError("FRONTEND_PUBLIC_URL must use HTTPS in production")
+            if self.email_verification_required and not (self.smtp_host and self.smtp_from_email):
+                raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required when email verification is enabled in production")
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",
