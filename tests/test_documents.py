@@ -988,3 +988,33 @@ async def test_create_rolls_back_flushed_partial_chunks_when_chunk_storage_fails
 
     assert documents == []
     assert chunks == []
+
+
+@pytest.mark.asyncio
+async def test_upload_enforces_rate_limit_before_reading_file():
+    upload = UploadFile(filename="limited.txt", file=BytesIO(b"content"))
+    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
+    rate_limit_error = HTTPException(
+        status_code=429,
+        detail="Too many requests. Please try again later.",
+    )
+
+    with patch(
+        "app.api.documents.enforce_rate_limit",
+        new_callable=AsyncMock,
+        side_effect=rate_limit_error,
+    ) as mock_limit:
+        with pytest.raises(HTTPException) as error:
+            await upload_document(
+                response=Response(),
+                file=upload,
+                db=AsyncMock(),
+                user=SimpleNamespace(id=42),
+                http_request=request,
+            )
+
+    assert error.value.status_code == 429
+    assert upload.file.tell() == 0
+    mock_limit.assert_awaited_once()
+    assert mock_limit.await_args.args[2] == "document_upload"
+    assert mock_limit.await_args.kwargs["identity"] == "42"
