@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.api.auth import router as auth_router
 from app.api.documents import router as documents_router
 from app.core.config import settings
+from app.middleware.upload_limits import UploadRequestSizeLimitMiddleware
 
 app = FastAPI(
     title=settings.app_name,
@@ -20,6 +21,8 @@ frontend_origins = [
     for origin in settings.frontend_origins.split(",")
     if origin.strip()
 ]
+
+app.add_middleware(UploadRequestSizeLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
