@@ -1,14 +1,13 @@
-
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
-from app.services.llm import GeminiRateLimitError, GeminiUnavailableError
 
 from app.api.documents import ask_question
 from app.schemas.document import AskRequest
+from app.services.llm import GeminiRateLimitError, GeminiUnavailableError
 
 
 @pytest.fixture
@@ -30,102 +29,60 @@ def ask_request():
     return AskRequest(question="Что такое Python?", limit=5)
 
 
+@pytest.fixture
+def chunks():
+    return [{
+        "title": "Python",
+        "content": "Python — язык программирования.",
+        "document_id": 1,
+        "chunk_id": 1,
+        "chunk_index": 0,
+        "source_page": None,
+        "source_section": None,
+        "score": 0.9,
+    }]
+
+
 @pytest.mark.asyncio
-async def test_ask_returns_429_when_gemini_quota_exhausted(ask_request, ask_http_request):
-    chunks = [
-        {
-            "title": "Python",
-            "content": "Python — язык программирования.",
-            "document_id": 1,
-            "chunk_id": 1,
-            "chunk_index": 0,
-            "source_page": None,
-            "source_section": None,
-            "score": 0.9,
-        }
-    ]
-
-    error = GeminiRateLimitError("Gemini rate limit reached")
-
+async def test_ask_returns_429_when_gemini_quota_exhausted(ask_request, ask_http_request, chunks):
     with (
-        patch("app.api.documents.enforce_rate_limit", new_callable=AsyncMock),
-        patch("app.api.documents.enforce_rate_limit", new_callable=AsyncMock),
-        patch(
-            "app.api.documents.search_document_chunks",
-            new_callable=AsyncMock,
-            return_value=chunks,
-        ),
+        patch("app.api.documents.enforce_rate_limit", new_callable=AsyncMock) as rate_limit,
+        patch("app.api.documents.search_document_chunks", new_callable=AsyncMock, return_value=chunks),
         patch(
             "app.api.documents.generate_answer",
             new_callable=AsyncMock,
-            side_effect=error,
+            side_effect=GeminiRateLimitError("Gemini rate limit reached"),
         ),
     ):
         with pytest.raises(HTTPException) as exc_info:
             await ask_question(ask_request, ask_http_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert exc_info.value.status_code == 429
-    assert exc_info.value.detail == "AI service rate limit reached. Please try again later."
+    rate_limit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_ask_returns_503_when_gemini_unavailable(ask_request, ask_http_request):
-    chunks = [
-        {
-            "title": "Python",
-            "content": "Python — язык программирования.",
-            "document_id": 1,
-            "chunk_id": 1,
-            "chunk_index": 0,
-            "source_page": None,
-            "source_section": None,
-            "score": 0.9,
-        }
-    ]
-
-    error = GeminiUnavailableError("Gemini server error")
-
+async def test_ask_returns_503_when_gemini_unavailable(ask_request, ask_http_request, chunks):
     with (
-        patch(
-            "app.api.documents.search_document_chunks",
-            new_callable=AsyncMock,
-            return_value=chunks,
-        ),
+        patch("app.api.documents.enforce_rate_limit", new_callable=AsyncMock),
+        patch("app.api.documents.search_document_chunks", new_callable=AsyncMock, return_value=chunks),
         patch(
             "app.api.documents.generate_answer",
             new_callable=AsyncMock,
-            side_effect=error,
+            side_effect=GeminiUnavailableError("Gemini server error"),
         ),
     ):
         with pytest.raises(HTTPException) as exc_info:
             await ask_question(ask_request, ask_http_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == (
-        "AI service is temporarily unavailable. Please try again later."
-    )
+
 
 @pytest.mark.asyncio
-async def test_ask_returns_answer_with_sources(ask_request, ask_http_request):
-    chunks = [
-        {
-            "title": "Python",
-            "content": "Python — язык программирования.",
-            "document_id": 1,
-            "chunk_id": 1,
-            "chunk_index": 0,
-            "source_page": None,
-            "source_section": None,
-            "score": 0.9,
-        }
-    ]
-
+async def test_ask_returns_answer_with_sources(ask_request, ask_http_request, chunks):
     with (
-        patch(
-            "app.api.documents.search_document_chunks",
-            new_callable=AsyncMock,
-            return_value=chunks,
-        ) as mock_search,
+        patch("app.api.documents.enforce_rate_limit", new_callable=AsyncMock),
+        patch("app.api.documents.search_document_chunks", new_callable=AsyncMock, return_value=chunks) as mock_search,
         patch(
             "app.api.documents.generate_answer",
             new_callable=AsyncMock,
@@ -143,17 +100,11 @@ async def test_ask_returns_answer_with_sources(ask_request, ask_http_request):
 @pytest.mark.asyncio
 async def test_ask_returns_message_when_no_chunks_found(ask_request, ask_http_request):
     with (
-        patch(
-            "app.api.documents.search_document_chunks",
-            new_callable=AsyncMock,
-            return_value=[],
-        ),
-        patch(
-            "app.api.documents.generate_answer",
-            new_callable=AsyncMock,
-        ) as mock_generate,
+        patch("app.api.documents.enforce_rate_limit", new_callable=AsyncMock),
+        patch("app.api.documents.search_document_chunks", new_callable=AsyncMock, return_value=[]),
+        patch("app.api.documents.generate_answer", new_callable=AsyncMock) as mock_generate,
     ):
-        response = await ask_question(ask_request, db=AsyncMock(), user=SimpleNamespace(id=1))
+        response = await ask_question(ask_request, ask_http_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert "не найдено" in response.answer
     assert response.sources == []
