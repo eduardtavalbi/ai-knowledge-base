@@ -205,7 +205,7 @@ async def test_postgres_search_supports_russian_and_english_expansions(
         ),
         patch(
             "app.services.search.generate_embedding",
-            side_effect=[embedding(1.0), embedding(0.0, 1.0)],
+            side_effect=[embedding(1.0), embedding(1.0), embedding(0.0, 1.0)],
         ),
     ):
         results = await search_document_chunks(
