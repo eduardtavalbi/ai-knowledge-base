@@ -99,7 +99,7 @@ async def test_postgres_hybrid_search_combines_vector_and_full_text(
             return_value=["Python service"],
         ),
         patch(
-            "app.services.search.generate_embedding",
+            "app.services.search.generate_embeddings",
             return_value=query_vector,
         ),
     ):
@@ -151,7 +151,7 @@ async def test_postgres_hybrid_search_filters_weak_vector_matches(
             return_value=["qzxvnonexistent"],
         ),
         patch(
-            "app.services.search.generate_embedding",
+            "app.services.search.generate_embeddings",
             return_value=[1.0] + [0.0] * 383,
         ),
     ):
