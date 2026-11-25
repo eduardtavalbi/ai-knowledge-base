@@ -78,8 +78,8 @@ async def test_chunk_storage_persists_source_page_and_section():
     ]
 
     with patch(
-        "app.services.chunk_storage.generate_embedding",
-        return_value=[0.0] * 384,
+        "app.services.chunk_storage.generate_embeddings",
+        return_value=[[0.0] * 384],
     ):
         await save_document_chunks(document, db, source_segments=source_segments)
 
@@ -102,7 +102,7 @@ async def test_chunk_storage_keeps_metadata_when_combining_paragraphs():
     ]
 
     with patch(
-        "app.services.chunk_storage.generate_embedding",
+        "app.services.chunk_storage.generate_embeddings",
         return_value=[0.0] * 384,
     ):
         await save_document_chunks(document, db, source_segments=source_segments)
@@ -149,3 +149,39 @@ async def test_docx_upload_passes_section_metadata_to_chunk_storage(client):
         and "Employees may work remotely." in segment.text
         for segment in segments
     )
+
+
+@pytest.mark.asyncio
+async def test_chunk_storage_generates_embeddings_in_one_batch():
+    document = Document(
+        id=99,
+        title="Long policy",
+        content="",
+    )
+    db = MagicMock()
+    db.flush = AsyncMock()
+    source_segments = [
+        SourceSegment("A" * 1200, page_number=5, section_title="Limits")
+    ]
+    expected_chunks = [
+        ("A" * 500, 5, "Limits"),
+        ("A" * 500, 5, "Limits"),
+        ("A" * 400, 5, "Limits"),
+    ]
+    vectors = [[float(index)] * 384 for index in range(3)]
+
+    with patch(
+        "app.services.chunk_storage.generate_embeddings",
+        return_value=vectors,
+    ) as generate_batch:
+        await save_document_chunks(document, db, source_segments=source_segments)
+
+    generate_batch.assert_called_once_with([item[0] for item in expected_chunks])
+    stored_chunks = [call.args[0] for call in db.add.call_args_list]
+    assert [chunk.content for chunk in stored_chunks] == [
+        item[0] for item in expected_chunks
+    ]
+    assert [chunk.embedding for chunk in stored_chunks] == vectors
+    assert [chunk.chunk_index for chunk in stored_chunks] == [0, 1, 2]
+    assert all(chunk.source_page == 5 for chunk in stored_chunks)
+    assert all(chunk.source_section == "Limits" for chunk in stored_chunks)
