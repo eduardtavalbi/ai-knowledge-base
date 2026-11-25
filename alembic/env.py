@@ -2,6 +2,7 @@ from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 
 from logging.config import fileConfig
+import os
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -17,7 +18,8 @@ config = context.config
 
 # Use the same database configured for the application, with a synchronous
 # driver because Alembic's online migration engine is synchronous.
-database_url = make_url(settings.database_url).set(drivername="postgresql+psycopg2")
+database_url_value = os.environ.get("DATABASE_URL") or settings.database_url
+database_url = make_url(database_url_value).set(drivername="postgresql+psycopg2")
 config.set_section_option(
     config.config_ini_section,
     "sqlalchemy.url",
