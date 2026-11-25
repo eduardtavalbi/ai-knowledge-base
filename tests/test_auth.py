@@ -733,12 +733,6 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
         headers={"Cookie": f"mindbase_refresh={refresh_token}"},
     )
     assert refresh_again.status_code == 401
-    login_again = await unauthenticated_client.post(
-        "/auth/login",
-        data={"username": "delete-me@example.com", "password": "a-long-test-password"},
-    )
-    assert login_again.status_code == 401
-
     async with TestingSessionLocal() as session:
         assert (await session.execute(select(func.count()).select_from(User))).scalar_one() == 0
         assert (await session.execute(select(func.count()).select_from(Document))).scalar_one() == 0
@@ -763,3 +757,23 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
                 )
             )
         ).scalar_one() == 0
+
+    # Verify account-linked audit data is gone before generating a new
+    # pseudonymous failed-login event for the now-unknown email address.
+    login_again = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "delete-me@example.com", "password": "a-long-test-password"},
+    )
+    assert login_again.status_code == 401
+    async with TestingSessionLocal() as session:
+        assert (
+            await session.execute(
+                select(func.count())
+                .select_from(SecurityAuditEvent)
+                .where(
+                    SecurityAuditEvent.email_hash
+                    == hash_security_identifier("delete-me@example.com"),
+                    SecurityAuditEvent.user_id.is_(None),
+                )
+            )
+        ).scalar_one() == 1
