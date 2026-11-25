@@ -273,7 +273,7 @@ async def upload_document(
     if not file.filename:
         raise HTTPException(
             status_code=400,
-            detail="Filename is reqiered"
+            detail="Filename is required"
         )
 
     max_size = 2 * 1024 * 1024
