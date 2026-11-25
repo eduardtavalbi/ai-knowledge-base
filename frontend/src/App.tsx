@@ -58,6 +58,7 @@ function App() {
   const [uploading, setUploading] = useState(false)
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
+  const searchRequestId = useRef(0)
   const [aiAnswer, setAiAnswer] = useState('')
   const [answerSources, setAnswerSources] = useState<AskSource[]>([])
 
@@ -94,6 +95,7 @@ function App() {
       return
     }
 
+    const requestId = ++searchRequestId.current
     setLoading(true)
     setHasSearched(true)
     setMessage('')
@@ -118,7 +120,9 @@ function App() {
       }
 
       const data: AskResponse = await response.json()
+      if (requestId !== searchRequestId.current) return
 
+      setApiStatus('online')
       setAiAnswer(data.answer)
       setAnswerSources(data.sources ?? [])
 
@@ -134,6 +138,7 @@ function App() {
         setMessage('Не удалось найти информацию по этому вопросу.')
       }
     } catch (error) {
+      if (requestId !== searchRequestId.current) return
       console.error('Ошибка запроса к ИИ:', error)
       setMessage(
         error instanceof Error
@@ -141,7 +146,7 @@ function App() {
           : 'Не удалось получить ответ от ИИ.',
       )
     } finally {
-      setLoading(false)
+      if (requestId === searchRequestId.current) setLoading(false)
     }
   }
   async function uploadFile(event: React.ChangeEvent<HTMLInputElement>) {
@@ -228,6 +233,8 @@ function App() {
       throw new Error(`HTTP ${response.status}`)
     }
 
+    searchRequestId.current += 1
+    setLoading(false)
     setDocuments((current) =>
       current.filter((item) => item.id !== document.id),
     )
@@ -289,6 +296,8 @@ function App() {
 
       const updatedDocument: DocumentItem = await response.json()
 
+      searchRequestId.current += 1
+      setLoading(false)
       setDocuments((current) =>
         current.map((item) =>
           item.id === updatedDocument.id ? updatedDocument : item,
