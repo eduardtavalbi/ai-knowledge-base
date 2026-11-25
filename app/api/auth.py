@@ -477,6 +477,9 @@ async def reset_password(
 
     await db.commit()
     await record_security_event(db, "password_reset_completed", http_request, email=user.email, user_id=user.id)
+    # A password reset revokes every session, including a refresh cookie in this browser.
+    _clear_refresh_cookie(response)
+    _set_no_store_headers(response)
     response.status_code = 204
     return response
 
