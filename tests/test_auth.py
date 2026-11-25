@@ -175,6 +175,11 @@ async def test_user_can_list_and_revoke_only_own_sessions(unauthenticated_client
         data={"username": "sessions@example.com", "password": "a-long-test-password"},
     )
     second_session_token = second_login.json()["access_token"]
+    second_session_id = jwt.decode(
+        second_session_token,
+        settings.auth_secret_key,
+        algorithms=["HS256"],
+    )["sid"]
 
     sessions = await unauthenticated_client.get(
         "/auth/sessions",
@@ -183,7 +188,7 @@ async def test_user_can_list_and_revoke_only_own_sessions(unauthenticated_client
     assert sessions.status_code == 200
     assert len(sessions.json()) == 2
 
-    session_to_revoke = sessions.json()[0]["id"]
+    session_to_revoke = second_session_id
     revoked = await unauthenticated_client.delete(
         f"/auth/sessions/{session_to_revoke}",
         headers={"Authorization": f"Bearer {first_token}"},
