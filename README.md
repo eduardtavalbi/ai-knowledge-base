@@ -117,6 +117,8 @@ Configure the following variables in `.env`:
 
 ```dotenv
 APP_NAME=AI Knowledge Base API
+ENVIRONMENT=development
+SECURITY_AUDIT_RETENTION_DAYS=90
 DEBUG=false
 AUTH_SECRET_KEY=GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
 REFRESH_TOKEN_COOKIE_SECURE=false
@@ -147,7 +149,7 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 ```
 
-Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys. For local HTTP development, keep `REFRESH_TOKEN_COOKIE_SECURE=false`; set it to `true` behind HTTPS in production. Set `FRONTEND_ORIGINS` to the exact comma-separated origins serving the browser app (without trailing slashes). To require verified email addresses, set `EMAIL_VERIFICATION_REQUIRED=true` and configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`, and any required SMTP credentials; set `FRONTEND_PUBLIC_URL` to the public frontend URL.
+Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys. For local HTTP development, keep `REFRESH_TOKEN_COOKIE_SECURE=false`; set it to `true` behind HTTPS in production. Set `FRONTEND_ORIGINS` to the exact comma-separated origins serving the browser app (without trailing slashes). For local email verification, set `EMAIL_VERIFICATION_REQUIRED=true` and configure SMTP. Production requires SMTP host/from-address values for verification and account-recovery email delivery; provide any required SMTP credentials and set `FRONTEND_PUBLIC_URL` to the public frontend URL.
 
 Authentication abuse-protection defaults are 20 login attempts per IP and 8 per email/IP pair per 15 minutes; recovery endpoints allow 20 requests per IP and 4 per email/IP pair per hour; registration allows 10 attempts per IP per hour. Tune these values with the `AUTH_*` variables above. AI question generation is separately limited to 60 requests per IP and 20 requests per authenticated user/IP pair per minute by default; tune it with `AI_ASK_IP_LIMIT`, `AI_ASK_IDENTITY_LIMIT`, and `AI_ASK_WINDOW_SECONDS`. Document search endpoints are limited to 120 requests per IP and 60 requests per authenticated user/IP pair per minute by default; tune them with `AI_SEARCH_IP_LIMIT`, `AI_SEARCH_IDENTITY_LIMIT`, and `AI_SEARCH_WINDOW_SECONDS`. Counters are stored in PostgreSQL, so limits are shared across API workers. The API uses the direct client address and does not trust arbitrary forwarded-IP headers; configure trusted proxy handling at the deployment edge before placing it behind a reverse proxy. Security audit events store keyed digests of email, IP, and user-agent values rather than raw values, and never store passwords or action tokens. Rate-limit buckets older than 24 hours are cleaned up during authentication requests; define an operational retention policy for audit events before public deployment.
 
@@ -167,7 +169,7 @@ To run the API in Docker as well (instead of starting it with the local Python c
 docker compose up -d --build api
 ```
 
-The API container applies pending Alembic migrations before starting Uvicorn and exposes `/health` as a container health check. If you are upgrading a database that already contains documents, put `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` in `.env` before starting it. Do not start the containerized API and the local Uvicorn server at the same time because both use port `8000`.
+The API container applies pending Alembic migrations before starting Uvicorn. `/health` is a process liveness check; `/ready` verifies database connectivity and is used for the container readiness/health check. If you are upgrading a database that already contains documents, put `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` in `.env` before starting it. Do not start the containerized API and the local Uvicorn server at the same time because both use port `8000`.
 
 ### 4. Set up the Python environment
 
@@ -273,6 +275,20 @@ ai-knowledge-base/
 
 Mindbase is evolving into a multi-tenant commercial application. Each account owns a private document collection; document CRUD, deduplication, hybrid retrieval, and RAG context are scoped to the authenticated user.
 
+## Production Operations
+
+Set `ENVIRONMENT=production` to enable strict startup validation. Production requires `DEBUG=false`, a unique random `AUTH_SECRET_KEY` of at least 32 characters, `REFRESH_TOKEN_COOKIE_SECURE=true`, HTTPS-only `FRONTEND_ORIGINS` and `FRONTEND_PUBLIC_URL`, and SMTP host/from-address values for account email delivery. `SMTP_STARTTLS` and `SMTP_USE_SSL` are mutually exclusive. Keep secrets in your deployment platform's secret manager; inject them as environment variables and never bake them into images or commit them to the repository.
+
+`/health` reports process liveness. `/ready` executes a lightweight database query and returns HTTP 503 when PostgreSQL is unavailable. Configure your platform to monitor both endpoints and alert on repeated readiness failures, elevated HTTP 5xx/429 rates, API restarts, database storage pressure, and backup failures. Send application logs to a centralized log service and avoid logging request bodies, passwords, cookies, access tokens, or recovery tokens.
+
+Security audit retention defaults to 90 days and is configured with `SECURITY_AUDIT_RETENTION_DAYS`. The application deliberately does not delete audit history automatically on request traffic. Schedule the cleanup command as a separate daily/weekly deployment job:
+
+```bash
+python -m scripts.cleanup_security_audit
+```
+
+Override the configured period when needed with `--retention-days 90`. Run it using the same production database credentials as the API. Confirm legal, contractual, and incident-response retention requirements before selecting a period. Back up PostgreSQL regularly, encrypt backups at rest, restrict restore access, and periodically test restores.
+
 ## Security Notes
 
 - Keep API keys and credentials in local environment files.
@@ -280,5 +296,5 @@ Mindbase is evolving into a multi-tenant commercial application. Each account ow
 - Use `.env.example` as a template with placeholder values only.
 - Document endpoints require a bearer access token. Passwords are hashed with Argon2id; JWT access tokens expire after 30 minutes.
 - Every document query and retrieval path is scoped by the authenticated owner. Identical content can exist in separate accounts without cross-account deduplication.
-- Session refresh, token rotation/replay detection, logout, per-session revocation, email verification, password reset, account data export, and confirmed account deletion are implemented. Before public commercial deployment, still add production secret management, monitoring/alerting, and operational retention policies for security logs.
+- Session refresh, token rotation/replay detection, logout, per-session revocation, email verification, password reset, account data export, and confirmed account deletion are implemented. Production startup checks, database readiness, and an explicit audit-retention cleanup command are included; deployment-specific secret-manager integration, monitoring/alerting, and scheduling the cleanup job remain operational setup tasks.
 - Docker Compose binds the API and database ports to loopback and requires an explicit `POSTGRES_PASSWORD`; do not replace this with a default or weak password.
