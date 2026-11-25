@@ -13,12 +13,17 @@ from app.models.rate_limit_bucket import RateLimitBucket
 from app.models.security_audit_event import SecurityAuditEvent
 
 
-def _digest(value: str) -> str:
+def hash_security_identifier(value: str) -> str:
+    """Return a keyed digest for an identifier used in security audit records."""
     return hmac.new(
         settings.auth_secret_key.encode("utf-8"),
         value.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
+
+
+def _digest(value: str) -> str:
+    return hash_security_identifier(value)
 
 
 async def enforce_rate_limit(
