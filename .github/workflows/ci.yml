@@ -43,9 +43,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Verify PostgreSQL connection
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d knowledge_base_test -v ON_ERROR_STOP=1 -c "SELECT current_user, current_database();"
+
       - name: Verify database migrations
         env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/knowledge_base_test
+          DATABASE_URL: ${{ env.PG_TEST_DATABASE_URL }}
         run: python -m alembic upgrade head
 
       - name: Run tests
