@@ -239,3 +239,45 @@ async def test_logout_revokes_session_even_after_access_token_expiry(unauthentic
 
     refresh = await unauthenticated_client.post("/auth/refresh")
     assert refresh.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_login_rejects_untrusted_browser_origin(unauthenticated_client):
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "origin@example.com", "password": "a-long-test-password"},
+    )
+    response = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "origin@example.com", "password": "a-long-test-password"},
+        headers={"Origin": "https://attacker.example"},
+    )
+    assert response.status_code == 403
+    assert "mindbase_refresh" not in unauthenticated_client.cookies
+
+
+@pytest.mark.asyncio
+async def test_refresh_rejects_untrusted_browser_origin(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "auth_secret_key",
+        "test-only-secret-key-that-is-long-enough-for-hmac",
+    )
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "refresh-origin@example.com", "password": "a-long-test-password"},
+    )
+    login = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "refresh-origin@example.com", "password": "a-long-test-password"},
+    )
+    assert login.status_code == 200
+
+    rejected = await unauthenticated_client.post(
+        "/auth/refresh",
+        headers={"Origin": "https://attacker.example"},
+    )
+    assert rejected.status_code == 403
+
+    accepted = await unauthenticated_client.post("/auth/refresh")
+    assert accepted.status_code == 200
