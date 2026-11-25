@@ -1,4 +1,5 @@
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException, Response, UploadFile
@@ -690,6 +691,7 @@ async def test_create_document_rolls_back_when_chunk_embedding_fails(client):
                     title="Atomic upload",
                     content="This document must not be partially saved.",
                     db=db,
+                    user_id=1,
                 )
 
     async with TestingSessionLocal() as db:
@@ -755,6 +757,7 @@ async def test_update_rolls_back_document_and_old_chunks_when_embedding_fails(cl
                         content="Replacement content that must be rolled back.",
                     ),
                     db=db,
+                    user=SimpleNamespace(id=1),
                 )
 
     async with TestingSessionLocal() as db:
