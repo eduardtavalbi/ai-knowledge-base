@@ -116,7 +116,8 @@ async def search_documents(
         return documents[:limit]
 
     # 3. Семантический поиск дополняет результаты.
-    query_embedding = generate_embedding(query)
+    # SentenceTransformer inference is synchronous; keep it off the event loop.
+    query_embedding = await asyncio.to_thread(generate_embedding, query)
 
     distance = DocumentChunk.embedding.cosine_distance(
         query_embedding
