@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   BrainCircuit,
   Search,
@@ -131,13 +131,13 @@ function App() {
     }
   }, [editingDocument, selectedDocument])
 
-  function closeSelectedDocument() {
+  const closeSelectedDocument = useCallback(() => {
     selectedDocumentRequestId.current += 1
     selectedDocumentRequestDocumentId.current = null
     setSelectedDocument(null)
     setSelectedDocumentLoading(false)
     setSelectedDocumentError('')
-  }
+  }, [])
 
 
   useEffect(() => {
@@ -155,7 +155,8 @@ function App() {
 
     window.addEventListener('keydown', handleModalKeyDown)
     return () => window.removeEventListener('keydown', handleModalKeyDown)
-  }, [editingDocument, selectedDocument, savingEdit])
+  }, [editingDocument, selectedDocument, savingEdit, closeSelectedDocument])
+
   async function openDocument(document: DocumentItem) {
     const requestId = ++selectedDocumentRequestId.current
     selectedDocumentRequestDocumentId.current = document.id
@@ -185,10 +186,10 @@ function App() {
     }
   }
 
-  async function requestApi(
+  const requestApi = useCallback(async (
     input: RequestInfo | URL,
     init?: RequestInit,
-  ): Promise<Response> {
+  ): Promise<Response> => {
     try {
       const response = await fetch(input, init)
       // An HTTP error still proves that the API is reachable; only a failed
@@ -199,9 +200,9 @@ function App() {
       setApiStatus('offline')
       throw error
     }
-  }
+  }, [])
 
-  async function loadDocuments() {
+  const loadDocuments = useCallback(async () => {
     setDocumentsLoading(true)
     try {
       const response = await requestApi(`${API_URL}/documents/`)
@@ -223,12 +224,11 @@ function App() {
     } finally {
       setDocumentsLoading(false)
     }
-  }
-
+  }, [requestApi])
 
   useEffect(() => {
-    void loadDocuments()
-  }, [])
+    void Promise.resolve().then(loadDocuments)
+  }, [loadDocuments])
   async function searchDocuments(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
