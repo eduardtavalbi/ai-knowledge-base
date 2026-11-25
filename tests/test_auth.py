@@ -103,12 +103,14 @@ async def test_refresh_rotates_token_and_reuse_revokes_session(unauthenticated_c
         data={"username": "rotation@example.com", "password": "a-long-test-password"},
     )
     assert login.status_code == 200
+    assert login.headers["cache-control"] == "no-store"
     access_token = login.json()["access_token"]
     old_refresh_token = unauthenticated_client.cookies.get("mindbase_refresh")
     assert old_refresh_token
 
     rotated = await unauthenticated_client.post("/auth/refresh")
     assert rotated.status_code == 200
+    assert rotated.headers["cache-control"] == "no-store"
     new_refresh_token = unauthenticated_client.cookies.get("mindbase_refresh")
     assert new_refresh_token and new_refresh_token != old_refresh_token
 
