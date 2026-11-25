@@ -18,3 +18,4 @@ class User(Base):
         nullable=False,
     )
     documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
