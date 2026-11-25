@@ -45,6 +45,17 @@ async def postgres_session():
                     checkfirst=False,
                 )
             )
+            await connection.execute(
+                text(
+                    """
+                    CREATE INDEX ix_document_chunks_embedding_hnsw
+                    ON document_chunks
+                    USING hnsw (embedding vector_cosine_ops)
+                    WITH (m = 16, ef_construction = 64)
+                    WHERE embedding IS NOT NULL
+                    """
+                )
+            )
 
         session_factory = async_sessionmaker(
             engine,
@@ -175,3 +186,31 @@ async def test_postgres_hybrid_search_filters_weak_vector_matches(
         )
 
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_postgres_semantic_candidate_query_can_use_hnsw_index(
+    postgres_session,
+):
+    query_vector = "[" + ",".join(["1"] + ["0"] * 383) + "]"
+    await postgres_session.execute(text("SET LOCAL enable_seqscan = off"))
+    plan = await postgres_session.execute(
+        text(
+            """
+            EXPLAIN (COSTS OFF)
+            SELECT chunk.id
+            FROM document_chunks AS chunk
+            JOIN documents AS document
+              ON document.id = chunk.document_id
+            WHERE document.user_id = :user_id
+              AND chunk.embedding IS NOT NULL
+              AND chunk.embedding <=> CAST(:query_vector AS vector) <= 0.55
+            ORDER BY chunk.embedding <=> CAST(:query_vector AS vector)
+            LIMIT 50
+            """
+        ),
+        {"user_id": 1, "query_vector": query_vector},
+    )
+    plan_text = "\n".join(row[0] for row in plan.all())
+
+    assert "ix_document_chunks_embedding_hnsw" in plan_text
