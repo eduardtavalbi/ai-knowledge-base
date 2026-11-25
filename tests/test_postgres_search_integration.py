@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.db.base import Base
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
+from app.models.user import User
 from app.services.search import search_document_chunks
 
 
@@ -45,6 +46,8 @@ async def postgres_session():
             expire_on_commit=False,
         )
         async with session_factory() as session:
+            session.add(User(id=1, email="search@example.com", hashed_password="unused"))
+            await session.commit()
             yield session
     finally:
         await engine.dispose()
@@ -58,13 +61,16 @@ async def postgres_session():
 @pytest.mark.asyncio
 async def test_postgres_hybrid_search_combines_vector_and_full_text(
     postgres_session,
+user_id=1,
 ):
     vector_match = Document(
+     user_id=1,
         title="Runtime architecture",
         content="Python service runtime",
         content_sha256="a" * 64,
     )
     text_match = Document(
+     user_id=1,
         title="Operations handbook",
         content="Python service deployment guide",
         content_sha256="b" * 64,
@@ -106,6 +112,7 @@ async def test_postgres_hybrid_search_combines_vector_and_full_text(
         results = await search_document_chunks(
             "Python service",
             postgres_session,
+            user_id=1,
             limit=5,
         )
 
@@ -121,6 +128,7 @@ async def test_postgres_hybrid_search_combines_vector_and_full_text(
 @pytest.mark.asyncio
 async def test_postgres_hybrid_search_filters_weak_vector_matches(
     postgres_session,
+user_id=1,
 ):
     # Keep the test independent if a PostgreSQL schema contains leftover rows.
     await postgres_session.execute(delete(DocumentChunk))
@@ -128,6 +136,7 @@ async def test_postgres_hybrid_search_filters_weak_vector_matches(
     await postgres_session.commit()
 
     document = Document(
+     user_id=1,
         title="Unrelated material",
         content="A document without the requested terms",
         content_sha256="c" * 64,
@@ -158,6 +167,7 @@ async def test_postgres_hybrid_search_filters_weak_vector_matches(
         results = await search_document_chunks(
             "qzxvnonexistent",
             postgres_session,
+            user_id=1,
             limit=5,
         )
 
