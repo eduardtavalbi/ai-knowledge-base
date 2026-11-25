@@ -132,6 +132,12 @@ async def _create_action_token(
     purpose: str,
     expires_in: timedelta,
 ) -> str:
+    # Lock the parent account row before inspecting active tokens. Locking
+    # only existing token rows is insufficient when two requests arrive while
+    # no token exists yet: both could otherwise create a valid token.
+    await db.execute(
+        select(User.id).where(User.id == user.id).with_for_update()
+    )
     existing = await db.execute(
         select(AccountActionToken).where(
             AccountActionToken.user_id == user.id,
