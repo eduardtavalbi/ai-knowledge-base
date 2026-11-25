@@ -132,7 +132,7 @@ async def test_ask_returns_answer_with_sources(ask_request, ask_http_request):
             return_value="Python — язык программирования. [Источник: 1]",
         ) as mock_generate,
     ):
-        response = await ask_question(ask_request, db=AsyncMock(), user=SimpleNamespace(id=1))
+        response = await ask_question(ask_request, ask_http_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert response.answer == "Python — язык программирования. [Источник: 1]"
     assert [source.model_dump() for source in response.sources] == chunks
