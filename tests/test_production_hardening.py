@@ -20,6 +20,8 @@ def production_settings(**overrides):
         "frontend_origins": "https://app.example.com",
         "frontend_public_url": "https://app.example.com",
         "database_url": "postgresql+asyncpg://mindbase:secure-db-password@db:5432/mindbase",
+        "smtp_host": "smtp.example.com",
+        "smtp_from_email": "noreply@example.com",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -42,6 +44,7 @@ def test_production_configuration_accepts_secure_values():
         {"frontend_public_url": "http://app.example.com"},
         {"database_url": "postgresql+asyncpg://mindbase:CHANGE_ME@db:5432/mindbase"},
         {"database_url": "postgresql+asyncpg:///mindbase"},
+        {"smtp_host": "",},
         {"email_verification_required": True},
         {
             "email_verification_required": True,
