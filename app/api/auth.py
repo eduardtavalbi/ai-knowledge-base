@@ -7,18 +7,22 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pwdlib import PasswordHash
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
+from app.models.document import Document
+from app.models.document_chunk import DocumentChunk
 from app.models.user_session import UserSession, SessionRefreshToken
 from app.models.account_action_token import AccountActionToken
+from app.models.security_audit_event import SecurityAuditEvent
 from app.services.email import send_account_email
 from app.services.security import enforce_rate_limit, record_security_event
 
@@ -81,6 +85,11 @@ class VerifyEmailRequest(BaseModel):
 class PasswordResetRequest(BaseModel):
     token: str = Field(min_length=20, max_length=256)
     new_password: str = Field(min_length=12, max_length=128)
+
+
+class DeleteAccountRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    confirmation: str = Field(min_length=1, max_length=16)
 
 
 def _secret_key() -> str:
@@ -711,3 +720,106 @@ async def revoke_session(
 @router.get("/me", response_model=UserResponse)
 async def get_me(user: User = Depends(get_current_user)):
     return user
+
+
+
+@router.get("/me/export")
+async def export_account_data(
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Document)
+        .where(Document.user_id == user.id)
+        .order_by(Document.id)
+    )
+    documents = result.scalars().all()
+    exported_at = _now()
+    payload = {
+        "format": "mindbase-account-export",
+        "version": 1,
+        "exported_at": exported_at.isoformat(),
+        "account": {
+            "email": user.email,
+            "email_verified": user.email_verified,
+            "created_at": _aware(user.created_at).isoformat(),
+        },
+        "documents": [
+            {
+                "id": document.id,
+                "title": document.title,
+                "content": document.content,
+            }
+            for document in documents
+        ],
+    }
+    return JSONResponse(
+        content=payload,
+        headers={
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "Content-Disposition": 'attachment; filename="mindbase-account-export.json"',
+        },
+    )
+
+
+@router.delete("/me", status_code=204)
+async def delete_account(
+    request: DeleteAccountRequest,
+    response: Response,
+    http_request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if request.confirmation != "DELETE":
+        raise HTTPException(
+            status_code=400,
+            detail='Confirmation must be exactly "DELETE"',
+        )
+
+    locked_user_result = await db.execute(
+        select(User).where(User.id == user.id).with_for_update()
+    )
+    locked_user = locked_user_result.scalar_one_or_none()
+    if locked_user is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    password_matches = await asyncio.to_thread(
+        password_hasher.verify,
+        request.current_password,
+        locked_user.hashed_password,
+    )
+    if not password_matches:
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+
+    try:
+        document_ids = select(Document.id).where(Document.user_id == locked_user.id)
+        await db.execute(
+            delete(DocumentChunk).where(DocumentChunk.document_id.in_(document_ids))
+        )
+        await db.execute(delete(Document).where(Document.user_id == locked_user.id))
+        await db.execute(
+            delete(AccountActionToken).where(
+                AccountActionToken.user_id == locked_user.id
+            )
+        )
+        await db.execute(
+            delete(UserSession).where(UserSession.user_id == locked_user.id)
+        )
+        # Remove account-linked audit records as part of the user's data deletion.
+        await db.execute(
+            delete(SecurityAuditEvent).where(
+                SecurityAuditEvent.user_id == locked_user.id
+            )
+        )
+        await db.delete(locked_user)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    _clear_refresh_cookie(response)
+    _set_no_store_headers(response)
+    response.status_code = 204
+    return response

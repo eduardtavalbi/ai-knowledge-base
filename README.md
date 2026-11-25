@@ -210,6 +210,8 @@ python -m pytest -v
 | `POST` | `/auth/refresh` | Rotate the HttpOnly refresh cookie and issue a new access token |
 | `POST` | `/auth/logout` | Revoke the current session |
 | `GET` | `/auth/me` | Get the authenticated account |
+| `GET` | `/auth/me/export` | Download the current account profile and documents as JSON |
+| `DELETE` | `/auth/me` | Permanently delete the account after password and confirmation checks |
 | `POST` | `/auth/verify-email` | Verify an email using a one-time token |
 | `POST` | `/auth/resend-verification` | Resend an email verification link |
 | `POST` | `/auth/forgot-password` | Request a password reset link |
@@ -261,5 +263,5 @@ Mindbase is evolving into a multi-tenant commercial application. Each account ow
 - Use `.env.example` as a template with placeholder values only.
 - Document endpoints require a bearer access token. Passwords are hashed with Argon2id; JWT access tokens expire after 30 minutes.
 - Every document query and retrieval path is scoped by the authenticated owner. Identical content can exist in separate accounts without cross-account deduplication.
-- Session refresh, token rotation/replay detection, logout, per-session revocation, email verification, and password reset are implemented. Before public commercial deployment, still add production secret management, monitoring/alerting, and operational retention policies for security logs.
+- Session refresh, token rotation/replay detection, logout, per-session revocation, email verification, password reset, account data export, and confirmed account deletion are implemented. Before public commercial deployment, still add production secret management, monitoring/alerting, and operational retention policies for security logs.
 - Docker Compose binds the API and database ports to loopback and requires an explicit `POSTGRES_PASSWORD`; do not replace this with a default or weak password.

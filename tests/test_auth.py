@@ -1,10 +1,15 @@
 import jwt
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api import auth as auth_module
 from app.core.config import settings
 from app.models.security_audit_event import SecurityAuditEvent
+from app.models.user import User
+from app.models.document import Document
+from app.models.document_chunk import DocumentChunk
+from app.models.account_action_token import AccountActionToken
+from app.models.user_session import UserSession
 from conftest import TestingSessionLocal
 
 
@@ -564,3 +569,159 @@ async def test_authentication_events_are_audited_without_raw_identifiers(unauthe
     assert all(event.email_hash != "audit@example.com" for event in events if event.email_hash)
     assert all(len(event.email_hash) == 64 for event in events if event.email_hash)
     assert all(len(event.ip_hash) == 64 for event in events if event.ip_hash)
+
+
+
+@pytest.mark.asyncio
+async def test_account_export_contains_only_callers_data_and_no_secrets(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "auth_secret_key",
+        "test-only-secret-key-that-is-long-enough-for-hmac",
+    )
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "export-owner@example.com", "password": "a-long-test-password"},
+    )
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "export-other@example.com", "password": "another-long-password"},
+    )
+    async with TestingSessionLocal() as session:
+        owner = (await session.execute(
+            select(User).where(User.email == "export-owner@example.com")
+        )).scalar_one()
+        other = (await session.execute(
+            select(User).where(User.email == "export-other@example.com")
+        )).scalar_one()
+        session.add_all([
+            Document(user_id=owner.id, title="Private note", content="Owner-only content"),
+            Document(user_id=other.id, title="Other note", content="Must not leak"),
+        ])
+        await session.commit()
+
+    login = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "export-owner@example.com", "password": "a-long-test-password"},
+    )
+    token = login.json()["access_token"]
+    exported = await unauthenticated_client.get(
+        "/auth/me/export",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert exported.status_code == 200
+    assert exported.headers["cache-control"] == "no-store"
+    assert "attachment;" in exported.headers["content-disposition"]
+    payload = exported.json()
+    assert payload["format"] == "mindbase-account-export"
+    assert payload["account"]["email"] == "export-owner@example.com"
+    assert [item["title"] for item in payload["documents"]] == ["Private note"]
+    assert payload["documents"][0]["content"] == "Owner-only content"
+    serialized = exported.text
+    for secret in ("hashed_password", "refresh_token", "token_hash", "embedding", "Must not leak"):
+        assert secret not in serialized
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_requires_password_and_explicit_confirmation(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "auth_secret_key",
+        "test-only-secret-key-that-is-long-enough-for-hmac",
+    )
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "delete-guard@example.com", "password": "a-long-test-password"},
+    )
+    login = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "delete-guard@example.com", "password": "a-long-test-password"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    wrong_password = await unauthenticated_client.request(
+        "DELETE",
+        "/auth/me",
+        headers=headers,
+        json={"current_password": "wrong-password", "confirmation": "DELETE"},
+    )
+    wrong_confirmation = await unauthenticated_client.request(
+        "DELETE",
+        "/auth/me",
+        headers=headers,
+        json={"current_password": "a-long-test-password", "confirmation": "delete"},
+    )
+    assert wrong_password.status_code == 403
+    assert wrong_confirmation.status_code == 400
+    profile = await unauthenticated_client.get("/auth/me", headers=headers)
+    assert profile.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_removes_owned_data_and_invalidates_session(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "auth_secret_key",
+        "test-only-secret-key-that-is-long-enough-for-hmac",
+    )
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "delete-me@example.com", "password": "a-long-test-password"},
+    )
+    login = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "delete-me@example.com", "password": "a-long-test-password"},
+    )
+    token = login.json()["access_token"]
+    async with TestingSessionLocal() as session:
+        user = (await session.execute(
+            select(User).where(User.email == "delete-me@example.com")
+        )).scalar_one()
+        document = Document(
+            user_id=user.id,
+            title="Delete with account",
+            content="Private data",
+        )
+        session.add(document)
+        await session.flush()
+        session.add(DocumentChunk(
+            document_id=document.id,
+            chunk_index=0,
+            content="Private chunk",
+        ))
+        session.add(AccountActionToken(
+            user_id=user.id,
+            purpose="password_reset",
+            token_hash="a" * 64,
+            expires_at=auth_module._now(),
+        ))
+        await session.commit()
+
+    deleted = await unauthenticated_client.request(
+        "DELETE",
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"current_password": "a-long-test-password", "confirmation": "DELETE"},
+    )
+    assert deleted.status_code == 204
+    assert "mindbase_refresh" not in unauthenticated_client.cookies
+
+    profile = await unauthenticated_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert profile.status_code == 401
+    login_again = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "delete-me@example.com", "password": "a-long-test-password"},
+    )
+    assert login_again.status_code == 401
+
+    async with TestingSessionLocal() as session:
+        assert (await session.execute(select(func.count()).select_from(User))).scalar_one() == 0
+        assert (await session.execute(select(func.count()).select_from(Document))).scalar_one() == 0
+        assert (await session.execute(select(func.count()).select_from(DocumentChunk))).scalar_one() == 0
+        assert (await session.execute(select(func.count()).select_from(UserSession))).scalar_one() == 0
+        assert (await session.execute(select(func.count()).select_from(AccountActionToken))).scalar_one() == 0
