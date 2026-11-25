@@ -43,7 +43,9 @@ type AskResponse = {
 function App() {
   const [query, setQuery] = useState('')
   const [accessToken, setAccessToken] = useState<string | null>(null)
-  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset'>('login')
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset'>(() =>
+    new URLSearchParams(window.location.search).get('reset') ? 'reset' : 'login',
+  )
   const [authNotice, setAuthNotice] = useState('')
   const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get('reset') || '')
   const verificationToken = useRef(new URLSearchParams(window.location.search).get('verify'))
@@ -101,9 +103,6 @@ function App() {
     return () => { active = false }
   }, [])
 
-  useEffect(() => {
-    if (resetToken) setAuthMode('reset')
-  }, [resetToken])
 
   useEffect(() => {
     if (!editingDocument && !selectedDocument) return

@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import logging
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,7 @@ from app.models.user_session import UserSession, SessionRefreshToken
 from app.models.account_action_token import AccountActionToken
 from app.services.email import send_account_email
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 password_hasher = PasswordHash.recommended()
@@ -126,6 +128,7 @@ async def _create_action_token(
             AccountActionToken.purpose == purpose,
             AccountActionToken.used_at.is_(None),
         )
+        .with_for_update()
     )
     now = _now()
     for record in existing.scalars().all():
@@ -147,8 +150,8 @@ async def _send_action_email(user: User, token: str, purpose: str) -> None:
         subject = "Подтвердите email в Mindbase"
         link = f"{base_url}/?verify={token}"
         message = (
-            "Чтобы подтвердить адрес электронной почты в Mindbase, откройте ссылку:\n\n"
-            f"{link}\\n\nСсылка действительна 24 часа. Если вы не создавали аккаунт, "
+            "Чтобы подтвердить адрес электронной почты в Mindbase, откройте ссылку:\\n\\n"
+            f"{link}\\n\\nСсылка действительна 24 часа. Если вы не создавали аккаунт, "
             "просто проигнорируйте это письмо."
         )
     else:
@@ -316,15 +319,15 @@ async def verify_email(
         .with_for_update()
     )
     token_record = result.scalar_one_or_none()
-    if (
-        token_record is None
-        or token_record.used_at is not None
-        or _aware(token_record.expires_at) <= _now()
-    ):
+    if token_record is None or _aware(token_record.expires_at) <= _now():
         raise HTTPException(status_code=400, detail="Verification link is invalid or expired")
 
     user = await db.get(User, token_record.user_id)
     if user is None:
+        raise HTTPException(status_code=400, detail="Verification link is invalid or expired")
+    if token_record.used_at is not None:
+        if user.email_verified:
+            return user
         raise HTTPException(status_code=400, detail="Verification link is invalid or expired")
     token_record.used_at = _now()
     user.email_verified = True
@@ -349,7 +352,10 @@ async def resend_verification(
             user, db, "email_verification",
             timedelta(hours=EMAIL_VERIFICATION_TOKEN_HOURS),
         )
-        await _send_action_email(user, token, "email_verification")
+        try:
+            await _send_action_email(user, token, "email_verification")
+        except Exception:
+            logger.warning("Verification email delivery failed")
     return {"message": "If the account requires verification, an email will be sent."}
 
 
@@ -367,7 +373,10 @@ async def forgot_password(
             user, db, "password_reset",
             timedelta(minutes=PASSWORD_RESET_TOKEN_MINUTES),
         )
-        await _send_action_email(user, token, "password_reset")
+        try:
+            await _send_action_email(user, token, "password_reset")
+        except Exception:
+            logger.warning("Password reset email delivery failed")
     return {"message": "If an account with this email exists, a password reset email will be sent."}
 
 
