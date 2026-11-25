@@ -200,8 +200,6 @@ async def test_postgres_semantic_candidate_query_can_use_hnsw_index(
             EXPLAIN (COSTS OFF)
             SELECT chunk.id
             FROM document_chunks AS chunk
-            JOIN documents AS document
-              ON document.id = chunk.document_id
             WHERE chunk.embedding IS NOT NULL
               AND EXISTS (
                   SELECT 1
