@@ -75,7 +75,7 @@ def _aware(value: datetime) -> datetime:
 
 
 def _hash_refresh_token(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-utf-8")).hexdigest()
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _new_refresh_token() -> str:
