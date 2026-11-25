@@ -50,7 +50,8 @@ jobs:
 
       - name: Verify database migrations
         env:
-          DATABASE_URL: ${{ env.PG_TEST_DATABASE_URL }}
+          DATABASE_URL: postgresql+psycopg2://postgres@localhost:5432/knowledge_base_test
+          PGPASSWORD: postgres
         run: python -m alembic upgrade head
 
       - name: Run tests
