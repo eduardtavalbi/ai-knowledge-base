@@ -21,7 +21,7 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 - **Abuse protection** — PostgreSQL-backed rate limits for authentication, recovery, and AI question-generation endpoints, shared across API workers.
 - **Security audit trail** — records authentication and account-security events without storing passwords or raw action tokens.
 - **Automated tests** — tests the API and application behavior with pytest.
-- **Docker Compose** — provides a containerized development environment for the backend and database.
+- **Docker Compose** — starts PostgreSQL, the FastAPI backend, and a production-built Nginx frontend in one stack.
 
 ## Tech Stack
 
@@ -124,6 +124,8 @@ AUTH_SECRET_KEY=GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
 REFRESH_TOKEN_COOKIE_SECURE=false
 FRONTEND_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 FRONTEND_PUBLIC_URL=http://localhost:5173
+VITE_API_URL=http://localhost:8000
+FRONTEND_BIND_ADDRESS=127.0.0.1
 EMAIL_VERIFICATION_REQUIRED=false
 AI_ASK_IP_LIMIT=60
 AI_ASK_IDENTITY_LIMIT=20
@@ -155,21 +157,30 @@ Authentication abuse-protection defaults are 20 login attempts per IP and 8 per 
 
 If you are upgrading a database that already contains documents, set `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` before applying the ownership migration. The migration assigns all existing documents to this account; choose credentials you control. These variables are only needed for a database with existing documents.
 
-### 3. Start the database
+### 3. Start the complete application with Docker
 
 ```powershell
-docker compose up -d db
+docker compose up -d --build
 ```
 
-The database is exposed on `127.0.0.1:5434` only. The API is also bound to `127.0.0.1:8000`; neither service is exposed to other machines on the network. Docker Compose creates the persistent volume `ai_knowledge_base_vector_data` automatically on first startup.
+Compose starts PostgreSQL, applies Alembic migrations before starting the API, and then starts the built React frontend in Nginx. Open the app at `http://localhost:5173`; the API docs are at `http://localhost:8000/docs`. The database, API, and frontend ports bind to loopback by default. Docker Compose creates the persistent database volume `ai_knowledge_base_vector_data` automatically.
 
-To run the API in Docker as well (instead of starting it with the local Python command below), run:
+The frontend image is built with `VITE_API_URL`, which must be a URL the user's browser can reach (not a Docker-only service name). It defaults to `http://localhost:8000` for local use. Because Vite embeds this value into static assets at build time, rebuild the frontend after changing it:
 
 ```powershell
-docker compose up -d --build api
+docker compose build frontend
+docker compose up -d frontend
 ```
 
-The API container applies pending Alembic migrations before starting Uvicorn. `/health` is a process liveness check; `/ready` verifies database connectivity and is used for the container readiness/health check. If you are upgrading a database that already contains documents, put `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` in `.env` before starting it. Do not start the containerized API and the local Uvicorn server at the same time because both use port `8000`.
+Set `FRONTEND_ORIGINS` to the exact browser origin and `FRONTEND_PUBLIC_URL` to the public app URL. For a production deployment, set `ENVIRONMENT=production`, use HTTPS for the frontend and API, set `REFRESH_TOKEN_COOKIE_SECURE=true`, set `VITE_API_URL` to the public API origin, and configure `FRONTEND_ORIGINS`/`FRONTEND_PUBLIC_URL` to the public frontend origin. Keep `FRONTEND_BIND_ADDRESS=127.0.0.1` when a trusted TLS reverse proxy on the host forwards traffic to port 5173. Do not expose the development API or database ports directly to the public internet.
+
+For local frontend development with Vite instead of the Nginx container, start only the database and API:
+
+```powershell
+docker compose up -d --build db api
+```
+
+The API's `/health` endpoint is a process liveness check; `/ready` verifies database connectivity and is used for container readiness. If you are upgrading a database that already contains documents, put `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` in `.env` before starting the API. Do not start the containerized API and local Uvicorn on the same host port 8000.
 
 ### 4. Set up the Python environment
 
@@ -196,21 +207,17 @@ The API documentation is available at:
 
 http://127.0.0.1:8000/docs
 
-### 7. Start the frontend
+### 7. Start the frontend in Vite development mode
 
-Open another terminal:
+If you started only `db` and `api` above, open another terminal:
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Open the local URL printed by Vite, usually:
-
-http://localhost:5173
-
-If needed, configure `VITE_API_URL` in `frontend/.env.local` to point to the backend URL.
+Open the local URL printed by Vite, usually `http://localhost:5173`. Configure `VITE_API_URL` in `frontend/.env.local` if the API is not at `http://localhost:8000`. Do not run the Vite server and the Docker frontend container on port 5173 at the same time.
 
 ## Running Tests
 
