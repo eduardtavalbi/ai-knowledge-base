@@ -232,15 +232,15 @@ async def update_document(
             detail="Another document already has identical content",
         )
 
-    document.title = document_data.title
-    document.content = document_data.content
-    document.content_sha256 = content_sha256
-    document.embedding = await asyncio.to_thread(
-        generate_embedding,
-        document_data.content,
-    )
-
     try:
+        document.title = document_data.title
+        document.content = document_data.content
+        document.content_sha256 = content_sha256
+        document.embedding = await asyncio.to_thread(
+            generate_embedding,
+            document_data.content,
+        )
+
         await db.execute(
             delete(DocumentChunk).where(
                 DocumentChunk.document_id == document_id
