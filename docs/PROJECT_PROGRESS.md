@@ -45,12 +45,12 @@ If an area has not yet been fully inventoried, label its score **unassessed**; d
 ### Repository state
 
 - Repository: `eduardtavalbi/ai-knowledge-base`
-- Active branch: `feat/atomic-document-rollback-tests`
+- Active development branches: `feat/atomic-document-rollback-tests`, `feat/frontend-accessibility-ux`, `feat/rag-safe-abstention`, `feat/postgres-backup-restore-runbook`, `feat/frontend-container-deployment`, `feat/rag-retrieval-evaluation`
 - Active PR: [#7 — Harden document persistence and embedding initialization](https://github.com/eduardtavalbi/ai-knowledge-base/pull/7)
 - PR #7 status: open, Draft, not merged. Do not merge without explicit user authorization.
-- PR #7 current head: `c41f3c10cd07e8238865c3c9907afeca1b29b7f3`.
-- PR #7 Backend CI: run #359, run ID `45724052876`, exact head above — **success**. Docker Compose validation, lightweight test dependency install, PostgreSQL connection, Alembic migrations and **204 tests passed in 7.87s**; cleanup completed.
-- PR #7 Frontend CI: run #230, run ID `45724052783`, exact same head — **success**. TypeScript/Vite build and ESLint passed.
+- PR #7 application-code head at this checkpoint: `04c298bf33a675f94f6422d656c1cb5d0e0000a8`; a subsequent ledger-only commit advances the branch without changing application code.
+- PR #7 Backend CI: run #361, run ID `45724290016`, exact head above — **success**. Docker Compose validation, lightweight test dependency install, PostgreSQL connection, Alembic migrations and **204 tests passed in 5.77s**; cleanup completed.
+- PR #7 Frontend CI: run #232, run ID `45724289706`, exact same head — **success**. TypeScript/Vite build and ESLint passed.
 - Previous full-runtime baseline: run #344 on `0132489`, 203 tests passed in 19.68s.
 - PRs #4, #5 and #6 are merged into `main`. Their exact merge commits and CI evidence are recorded in the project handoff notes / GitHub history; verify against GitHub before making claims in a future report.
 
@@ -63,7 +63,7 @@ If an area has not yet been fully inventoried, label its score **unassessed**; d
 
 ### PR #7 — implemented and verified on current head, pending integration
 
-The following work is present in PR #7 and its full CI passed on `4802a29`:
+The following work is present in PR #7 and its full CI passed on `04c298b`:
 - rollback protection and regression test for partial document/chunk persistence;
 - lazy, thread-safe embedding model initialization and focused tests;
 - PostgreSQL concurrency test for duplicate content on concurrent document updates;
@@ -91,23 +91,61 @@ PR #7 is **not integrated** until the user explicitly authorizes merge and the m
 | Area | Known state | Remaining verification / work |
 |---|---|---|
 | Backend product flows | Core FastAPI and document/account flows exist; CI exercises backend | Audit end-to-end user journeys and API error contracts; record concrete gaps only |
-| Frontend product flows | React + TypeScript + Vite frontend exists; TypeScript production build and ESLint pass on PR #7 head | Core auth/document/search journeys still need browser-level end-to-end verification; no dedicated component/E2E test suite is present |
-| RAG quality | Chunking, multilingual embeddings, hybrid PostgreSQL/pgvector + FTS retrieval, multi-query retrieval, RRF, relevance filtering and Gemini answers are implemented; existing tests cover Russian/English queries, irrelevant matches, duplicate chunks, negation, conflicting policies, tenant isolation, abstention and citation validation | Build a repeatable labelled evaluation corpus and measure retrieval quality with real embeddings; run a controlled live Gemini groundedness/citation evaluation |
+| Frontend product flows | React + TypeScript + Vite frontend; PR #8 adds mobile navigation accessible names, navigation landmark, status announcements and duplicate-export prevention; TypeScript build and ESLint pass | Core auth/document/search journeys still need browser-level end-to-end verification; no dedicated component/E2E test suite is present |
+| RAG quality | Chunking, multilingual embeddings, hybrid PostgreSQL/pgvector + FTS retrieval, multi-query retrieval, RRF and Gemini answers; PR #9 adds strict Russian/English insufficient-evidence abstention with citation enforcement for factual claims; backend CI passes 207 tests | Build a repeatable labelled evaluation corpus and measure retrieval quality with real embeddings; run a controlled live Gemini groundedness/citation evaluation |
 | Security & reliability | Tenant isolation, auth/session/recovery controls, parser limits, upload limits and rate limiting have substantial implementation and tests; PR #7 CI passed | Finish targeted security review; integrate PR #7 only with authorization; verify any remaining gaps with tests |
-| Infrastructure & operations | Docker Compose, PostgreSQL, Alembic migrations, environment configuration and CI exist | Review structured logging, metrics/alerts, backups/restore, production deployment and clean-start procedure |
+| Infrastructure & operations | Docker Compose, PostgreSQL, Alembic migrations, environment configuration, health/readiness and CI; PR #10 adds a backup/restore runbook; PR #11 adds a multi-stage Nginx frontend container and Compose service | Verify frontend container smoke tests; execute the documented database restore against a temporary PostgreSQL database; review structured logging, metrics/alerts and production deployment |
 | Demo & release readiness | README, setup instructions and screenshots exist | Repeatable clean install, smoke test, production-like deployment, demo dataset/account and final release checklist |
 
 This area inventory is not yet a percentage. Convert it into a weighted deliverable checklist after inspecting the actual frontend, API, RAG evaluation and deployment workflows. Do not infer completion from README claims alone.
 
+## Active feature branches and current work
+
+- PR #7 — [Harden document persistence and embedding initialization](https://github.com/eduardtavalbi/ai-knowledge-base/pull/7), branch `feat/atomic-document-rollback-tests`, head `04c298bf33a675f94f6422d656c1cb5d0e0000a8`, open Draft, unmerged. Backend #361 and Frontend #232 both passed on this exact SHA.
+- PR #8 — [Improve frontend accessibility and export UX](https://github.com/eduardtavalbi/ai-knowledge-base/pull/8), branch `feat/frontend-accessibility-ux`, head `ebff9b1a8e9680ecb591213e424d7825beccdd90`, Draft, stacked on PR #7. Backend #362 and Frontend #233 both passed on this exact head.
+- PR #9 — [Allow safe RAG abstention when retrieved context is insufficient](https://github.com/eduardtavalbi/ai-knowledge-base/pull/9), branch `feat/rag-safe-abstention`, head `44e6ce3ec6f95c686e690926cf78fa8923d085e9`, Draft, stacked on PR #7. Backend #364 passed (**207 tests in 8.29s**) and Frontend #235 passed. An earlier run failed only because a test expected the old prompt wording; the assertion was corrected and the exact latest head passed.
+- PR #10 — [Document PostgreSQL backup and restore procedures](https://github.com/eduardtavalbi/ai-knowledge-base/pull/10), branch `feat/postgres-backup-restore-runbook`, Draft, stacked on PR #7. Runbook content commit `6fe8a22`; local `backups/` artifacts ignored in `d7d1e24`; latest progress-ledger checkpoint `9722e71`. Documentation commands have not yet been executed against a live or temporary database.
+- PR #11 — [Add containerized frontend to Docker Compose](https://github.com/eduardtavalbi/ai-knowledge-base/pull/11), branch `feat/frontend-container-deployment`, head `645fa0a43ab9dc3a61b93fd0a655d6a8adebb488`, Draft, based on `main`. Backend #366 passed (**189 tests in 7.05s**); Frontend #237 passed, including Docker image build and Nginx SPA smoke test.
+- PR #12 — [Add reproducible bilingual RAG retrieval evaluation](https://github.com/eduardtavalbi/ai-knowledge-base/pull/12), branch `feat/rag-retrieval-evaluation`, head `c92f38239bd671f368ab8d6e456f18f65115c3ce`, Draft, stacked on PR #7. Backend #368 passed (**208 tests in 8.36s**) and Frontend #239 passed; the real-embedding benchmark has not been executed.
+- All PRs remain unmerged. PRs #8–#10 and #12 are stacked on PR #7; PR #11 is based on `main`. Do not merge any PR without explicit user authorization.
+
+## Frontend audit — initial findings
+
+- Core auth, document list/detail/edit/delete, upload, search/answer, source display, export and account deletion flows are implemented in `frontend/src/App.tsx`.
+- Existing safeguards include request IDs to ignore stale results, single-flight refresh-token rotation, focus trapping/Escape handling for dialogs, and source chunk deduplication in document cards.
+- PR #8 fixes the compact mobile sidebar's missing accessible names, adds a navigation landmark, status announcements and prevents duplicate account export requests.
+- Frontend TypeScript/Vite build and ESLint passed on PR #8 exact head `ebff9b1`.
+- `frontend/package.json` has no frontend automated test runner. Browser-level journey tests remain an explicit gap; do not treat build/lint as end-to-end verification.
+
+## RAG audit — initial findings
+
+- Existing tests cover valid/missing/malformed/unknown citations, empty or blocked responses, provider failures, query expansion fallback/deduplication, conflicting sources, hybrid retrieval, duplicate suppression, per-document chunk caps, Russian/English retrieval and PostgreSQL HNSW behavior.
+- PR #9 fixes the abstention defect: when retrieved context is irrelevant, the model may return one narrowly matched Russian or English insufficient-evidence response without fabricating a citation.
+- Factual claims and mixed refusal-plus-claim responses still require valid citations. Latest PR #9 Backend CI passed 207 tests; Frontend CI passed on the same head.
+- Remaining quality work is a labelled corpus and real-embedding benchmark (Recall@K/MRR), followed by controlled groundedness/citation evaluation; unit tests alone are not a live model-quality benchmark.
+
+## RAG retrieval benchmark — implemented, verification pending
+
+- PR #12 adds an 8-query Russian/English labelled corpus with 11 synthetic documents and distractors.
+- The opt-in benchmark uses the real multilingual SentenceTransformer embeddings and PostgreSQL hybrid vector/FTS retrieval, with Gemini query expansion disabled to isolate ranking.
+- It reports Recall@5 and MRR@5 plus per-query relevant rank and retrieved titles. Unit tests validate corpus labels and metric arithmetic.
+- CI for PR #12 is running. The benchmark itself requires the full ML dependencies and a disposable PostgreSQL database; no real-embedding score is claimed yet.
+
+## Operations audit — initial findings
+
+- `/health` is a liveness check; `/ready` checks PostgreSQL connectivity. Compose starts the API only after database health and applies Alembic migrations before Uvicorn.
+- README previously recommended backups and restore tests without giving a reproducible procedure. PR #10 adds a Docker Compose-specific custom-format backup, temporary-database restore verification, live restore steps and recovery caveats.
+- PR #10 is documentation only; the restore procedure still needs execution against a disposable PostgreSQL database. Do not claim backup/restore is operationally verified until that succeeds.
+
 ## Next actions — continue here
 
-1. Refresh PR #7 state and CI head before any further work; current checkpoint `c41f3c1` passed Backend #359 and Frontend #230.
-2. Finish the PR #7 reliability/security review. Investigate concrete issues only; avoid speculative changes.
-3. Keep PR #7 Draft and unmerged until explicit user authorization.
-4. Complete browser-level frontend journey checks: registration/login, refresh/session expiry, upload, document CRUD, search/answer/source display, account export/delete and narrow-screen layout.
-5. Create a labelled RAG evaluation corpus and measure Recall@K/MRR plus citation validity, abstention and contradiction handling. Existing tests are regression coverage, not a live model-quality benchmark.
-6. Audit operations: clean Docker start, migrations from an empty database, restart behavior, health/readiness, logs, backup/restore and deployment assumptions. The frontend currently has no Docker service; evaluate a production-ready static frontend container/reverse-proxy setup.
-7. Once the six areas have been inventoried, calculate the first auditable weighted percentage. Thereafter update only the deliverables that actually changed and report the exact percentage delta.
+1. PR #11's container image build and Nginx SPA smoke test passed on exact head `645fa0a`; review production port binding and reverse-proxy configuration before deployment.
+2. PR #12's dataset/metric tests passed on exact head `c92f382`; the opt-in benchmark still needs a real-embedding run against a disposable PostgreSQL database.
+3. Execute PR #10's temporary-database restore procedure when a disposable PostgreSQL environment is available; do not claim recovery is verified before that.
+4. Run PR #12's opt-in benchmark with the full SentenceTransformers model and a disposable PostgreSQL database; record actual Recall@5/MRR@5 rather than estimating them.
+5. Continue browser-level frontend journey testing; PR #11 supplies container deployment but build/smoke tests do not replace auth and document-flow E2E coverage.
+6. Finish targeted PR #7 security/reliability review; the Retry-After race fix is verified on PR #7 head `04c298b`.
+7. Keep PRs #7–#12 Draft/unmerged until explicit user authorization. Do not calculate an overall percentage until all six areas have auditable deliverable inventories.
 
 ## Update log
 
@@ -117,3 +155,5 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 | 2026-11-26 | Fixed frontend export URL lifetime and clarified RAG score label. | Commit `0132489`; Frontend CI #215 and Backend CI #344 passed; 203 tests passed. |
 | 2026-11-26 | Made CI tests independent of the production embedding runtime using deterministic fixtures; excluded SentenceTransformers/Torch from test-only installs while preserving production requirements. | Commits `3e359e0`, `710e288`, `4bbd332`; CI #353 passed: 203 tests in 7.42s; Frontend CI #224 passed. |
 | 2026-11-26 | Corrected stale-window `Retry-After` calculation to use the effective active bucket; added delayed-request regression test. | Commits `12514a0` and `4be5126`; Backend CI #359 passed on head `c41f3c1`: 204 tests in 7.87s; Frontend CI #230 passed. |
+| 2026-11-26 | Added a PostgreSQL backup/restore runbook and README link; added strict Russian/English RAG abstention regression coverage; improved mobile navigation and export UX. | PR #8 head `ebff9b1` Frontend #233 passed, Backend #362 pending; PR #9 head `44e6ce3` Backend #364 (207 tests) and Frontend #235 passed; PR #10 head `6fe8a22`, restore procedure not yet executed. |
+| 2026-11-26 | Added containerized frontend deployment and an opt-in bilingual retrieval benchmark. | PR #11 head `645fa0a`, Backend #366 (189 tests) and Frontend #237 passed; PR #12 head `c92f382`, Backend #368 (208 tests) and Frontend #239 passed; real-embedding benchmark not yet run. |
