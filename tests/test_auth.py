@@ -482,6 +482,10 @@ async def test_forgot_password_does_not_disclose_unknown_email(unauthenticated_c
 
     monkeypatch.setattr(auth_module, "send_account_email", fake_send_email)
 
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "known@example.com", "password": "a-long-test-password"},
+    )
     known = await unauthenticated_client.post(
         "/auth/forgot-password",
         json={"email": "known@example.com"},
@@ -492,4 +496,4 @@ async def test_forgot_password_does_not_disclose_unknown_email(unauthenticated_c
     )
     assert known.status_code == unknown.status_code == 202
     assert known.json() == unknown.json()
-    assert sent == []
+    assert sent == ["known@example.com"]
