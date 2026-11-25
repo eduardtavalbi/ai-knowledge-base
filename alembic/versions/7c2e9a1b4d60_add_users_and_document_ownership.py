@@ -4,12 +4,13 @@ Revision ID: 7c2e9a1b4d60
 Revises: 4f8b2a1c9d30
 Create Date: 2026-11-25
 """
-import os
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 from pwdlib import PasswordHash
+
+from app.core.config import settings
 
 
 revision: str = "7c2e9a1b4d60"
@@ -41,8 +42,8 @@ def upgrade() -> None:
     ).scalar_one()
 
     if document_count:
-        email = os.getenv("MIGRATION_OWNER_EMAIL", "").strip().casefold()
-        password = os.getenv("MIGRATION_OWNER_PASSWORD", "")
+        email = settings.migration_owner_email.strip().casefold()
+        password = settings.migration_owner_password
         if not email or len(password) < 12:
             raise RuntimeError(
                 "Existing documents need an owner. Set MIGRATION_OWNER_EMAIL "
