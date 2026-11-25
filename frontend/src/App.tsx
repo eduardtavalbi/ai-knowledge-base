@@ -83,6 +83,61 @@ function App() {
     return () => window.removeEventListener('keydown', handleModalKeyDown)
   }, [editingDocument, selectedDocument, savingEdit])
 
+  useEffect(() => {
+    if (!editingDocument && !selectedDocument) return
+
+    const dialog = window.document.querySelector<HTMLElement>(
+      '.modal-overlay [role="dialog"]',
+    )
+    if (!dialog) return
+
+    const previouslyFocused = window.document.activeElement as HTMLElement | null
+    const focusableSelector = [
+      'a[href]',
+      'button:not([disabled])',
+      'input:not([disabled])',
+      'textarea:not([disabled])',
+      'select:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(', ')
+    const getFocusableElements = () =>
+      Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector))
+        .filter((element) => element.getAttribute('aria-hidden') !== 'true')
+
+    const focusableElements = getFocusableElements()
+    const initialFocus = editingDocument
+      ? dialog.querySelector<HTMLElement>('#edit-title')
+      : focusableElements[0]
+    ;(initialFocus ?? dialog).focus()
+
+    function trapDialogFocus(event: KeyboardEvent) {
+      if (event.key !== 'Tab') return
+
+      const elements = getFocusableElements()
+      if (elements.length === 0) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+
+      const first = elements[0]
+      const last = elements[elements.length - 1]
+      if (event.shiftKey && window.document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && window.document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    window.document.addEventListener('keydown', trapDialogFocus)
+    return () => {
+      window.document.removeEventListener('keydown', trapDialogFocus)
+      if (previouslyFocused?.isConnected) previouslyFocused.focus()
+    }
+  }, [Boolean(editingDocument), Boolean(selectedDocument)])
+
   async function requestApi(
     input: RequestInfo | URL,
     init?: RequestInit,
