@@ -419,3 +419,60 @@ async def test_postgres_search_keeps_identical_chunks_from_separate_documents(
     assert result_ids == {first_chunk.id, second_chunk.id}
     assert result_document_ids == {first_doc.id, second_doc.id}
     assert len(results) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("title", "content", "query"),
+    [
+        (
+            "Russian employee handbook",
+            "Сотрудники получают доступ к корпоративной системе.",
+            "сотрудник",
+        ),
+        (
+            "English employee handbook",
+            "Employees receive access to the corporate system.",
+            "employee",
+        ),
+    ],
+)
+async def test_postgres_full_text_search_matches_inflected_words(
+    postgres_session,
+    title,
+    content,
+    query,
+):
+    document = Document(title=title, content=content)
+    postgres_session.add(document)
+    await postgres_session.flush()
+
+    chunk = DocumentChunk(
+        document_id=document.id,
+        chunk_index=0,
+        content=content,
+        # Deliberately orthogonal to the query embedding: this test must pass
+        # through PostgreSQL full-text search, not semantic retrieval.
+        embedding=embedding(0.0, 1.0),
+    )
+    postgres_session.add(chunk)
+    await postgres_session.commit()
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.search.generate_embeddings",
+            return_value=[embedding(1.0, 0.0)],
+        ),
+    ):
+        results = await search_document_chunks(
+            query,
+            postgres_session,
+            limit=5,
+        )
+
+    assert [item["chunk_id"] for item in results] == [chunk.id]
