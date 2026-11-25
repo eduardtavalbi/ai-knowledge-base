@@ -88,7 +88,7 @@ function App() {
     init?: RequestInit,
   ): Promise<Response> {
     try {
-      const response = await requestApi(input, init)
+      const response = await fetch(input, init)
       // An HTTP error still proves that the API is reachable; only a failed
       // network request should switch the connection indicator to offline.
       setApiStatus('online')
