@@ -148,6 +148,40 @@ async def search_documents(
     return documents
 
 
+def _prepare_search_queries(
+    original_query: str,
+    expanded_queries: list[str],
+    max_queries: int = 3,
+) -> list[str]:
+    """Keep the user's exact query and add only distinct, bounded alternatives."""
+    original = original_query.strip()
+    if not original:
+        return []
+
+    queries = [original]
+    for candidate in expanded_queries:
+        if not isinstance(candidate, str):
+            continue
+        candidate = candidate.strip()
+        if not candidate or len(candidate) > 200:
+            continue
+
+        normalized = candidate.casefold()
+        is_duplicate = any(
+            normalized == existing.casefold()
+            or SequenceMatcher(
+                None, normalized, existing.casefold()
+            ).ratio() >= 0.85
+            for existing in queries
+        )
+        if not is_duplicate:
+            queries.append(candidate)
+        if len(queries) >= max(1, max_queries):
+            break
+
+    return queries[:max(1, max_queries)]
+
+
 async def search_document_chunks(
     query: str,
     db: AsyncSession,
@@ -158,7 +192,8 @@ async def search_document_chunks(
 
     from app.services.llm import expand_search_queries
 
-    queries = await expand_search_queries(query, max_queries=3)
+    expanded_queries = await expand_search_queries(query, max_queries=3)
+    queries = _prepare_search_queries(query, expanded_queries, max_queries=3)
     reciprocal_rank_constant = 60
     candidate_limit = limit * 10
     scores: dict[int, float] = {}
