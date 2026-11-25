@@ -1,9 +1,11 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
+import hashlib
 import re
+import secrets
+from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pwdlib import PasswordHash
 from pydantic import BaseModel, Field, field_validator
@@ -14,11 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
+from app.models.user_session import UserSession
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 password_hasher = PasswordHash.recommended()
 ACCESS_TOKEN_MINUTES = 30
+REFRESH_TOKEN_DAYS = 30
+REFRESH_COOKIE_NAME = "mindbase_refresh"
 
 
 class RegisterRequest(BaseModel):
@@ -29,7 +34,7 @@ class RegisterRequest(BaseModel):
     @classmethod
     def normalize_email(cls, value: str) -> str:
         normalized = value.strip().casefold()
-        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
+        if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", normalized):
             raise ValueError("A valid email address is required")
         return normalized
 
@@ -45,6 +50,12 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 
+class SessionResponse(BaseModel):
+    id: int
+    created_at: datetime
+    expires_at: datetime
+
+
 def _secret_key() -> str:
     secret = settings.auth_secret_key
     if len(secret) < 32 or secret == "CHANGE_ME_USE_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS":
@@ -55,12 +66,63 @@ def _secret_key() -> str:
     return secret
 
 
-def _create_access_token(user_id: int) -> str:
-    expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_MINUTES)
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _aware(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-utf-8")).hexdigest()
+
+
+def _new_refresh_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=token,
+        max_age=REFRESH_TOKEN_DAYS * 24 * 60 * 60,
+        httponly=True,
+        secure=settings.refresh_token_cookie_secure,
+        samesite="lax",
+        path="/auth",
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path="/auth",
+        httponly=True,
+        secure=settings.refresh_token_cookie_secure,
+        samesite="lax",
+    )
+
+
+def _create_access_token(user_id: int, session_id: int) -> str:
+    now = _now()
+    expires = now + timedelta(minutes=ACCESS_TOKEN_MINUTES)
     return jwt.encode(
-        {"sub": str(user_id), "exp": expires, "iat": datetime.now(timezone.utc)},
+        {
+            "sub": str(user_id),
+            "sid": session_id,
+            "exp": expires,
+            "iat": now,
+        },
         _secret_key(),
         algorithm="HS256",
+    )
+
+
+def _token_response(user_id: int, session_id: int) -> TokenResponse:
+    return TokenResponse(
+        access_token=_create_access_token(user_id, session_id),
+        expires_in=ACCESS_TOKEN_MINUTES * 60,
     )
 
 
@@ -75,11 +137,22 @@ async def get_current_user(
     )
     try:
         payload = jwt.decode(token, _secret_key(), algorithms=["HS256"])
-        subject = payload.get("sub")
-        user_id = int(subject)
-        if user_id <= 0:
-            raise ValueError("Invalid user ID")
-    except (jwt.PyJWTError, TypeError, ValueError):
+        user_id = int(payload["sub"])
+        session_id = int(payload["sid"])
+        if user_id <= 0 or session_id <= 0:
+            raise ValueError("Invalid token subject")
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError):
+        raise credentials_error
+
+    result = await db.execute(
+        select(UserSession).where(
+            UserSession.id == session_id,
+            UserSession.user_id == user_id,
+            UserSession.revoked_at.is_(None),
+        )
+    )
+    session = result.scalar_one_or_none()
+    if session is None or _aware(session.expires_at) <= _now():
         raise credentials_error
 
     user = await db.get(User, user_id)
@@ -110,8 +183,22 @@ async def register(
     return user
 
 
+async def _create_session(user: User, db: AsyncSession) -> tuple[UserSession, str]:
+    refresh_token = _new_refresh_token()
+    session = UserSession(
+        user_id=user.id,
+        refresh_token_hash=_hash_refresh_token(refresh_token),
+        expires_at=_now() + timedelta(days=REFRESH_TOKEN_DAYS),
+    )
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return session, refresh_token
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(
+    response: Response,
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
@@ -129,10 +216,120 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return TokenResponse(
-        access_token=_create_access_token(user.id),
-        expires_in=ACCESS_TOKEN_MINUTES * 60,
+    session, refresh_token = await _create_session(user, db)
+    _set_refresh_cookie(response, refresh_token)
+    return _token_response(user.id, session.id)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_session(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token is missing")
+
+    token_hash = _hash_refresh_token(refresh_token)
+    result = await db.execute(
+        select(UserSession)
+        .where(
+            (UserSession.refresh_token_hash == token_hash)
+            | (UserSession.previous_refresh_token_hash == token_hash)
+        )
+        .with_for_update()
     )
+    session = result.scalar_one_or_none()
+    if session is None or session.revoked_at is not None:
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if session.previous_refresh_token_hash == token_hash:
+        session.revoked_at = _now()
+        await db.commit()
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Refresh token reuse detected")
+
+    if _aware(session.expires_at) <= _now():
+        session.revoked_at = _now()
+        await db.commit()
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+
+    user = await db.get(User, session.user_id)
+    if user is None:
+        session.revoked_at = _now()
+        await db.commit()
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    replacement = _new_refresh_token()
+    session.previous_refresh_token_hash = session.refresh_token_hash
+    session.refresh_token_hash = _hash_refresh_token(replacement)
+    await db.commit()
+    _set_refresh_cookie(response, replacement)
+    return _token_response(user.id, session.id)
+
+
+@router.post("/logout", status_code=204)
+async def logout(
+    response: Response,
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        payload = jwt.decode(token, _secret_key(), algorithms=["HS256"])
+        session_id = int(payload["sid"])
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError):
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+    session = await db.get(UserSession, session_id)
+    if session is not None and session.revoked_at is None:
+        session.revoked_at = _now()
+        await db.commit()
+    _clear_refresh_cookie(response)
+    return Response(status_code=204)
+
+
+@router.get("/sessions", response_model=list[SessionResponse])
+async def list_sessions(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(UserSession)
+        .where(
+            UserSession.user_id == user.id,
+            UserSession.revoked_at.is_(None),
+            UserSession.expires_at > _now(),
+        )
+        .order_by(UserSession.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def revoke_session(
+    session_id: int,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(UserSession).where(
+            UserSession.id == session_id,
+            UserSession.user_id == user.id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.revoked_at is None:
+        session.revoked_at = _now()
+        await db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/me", response_model=UserResponse)
