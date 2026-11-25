@@ -1,6 +1,7 @@
 import jwt
 import pytest
 
+from app.api import auth as auth_module
 from app.core.config import settings
 
 
@@ -87,6 +88,7 @@ async def test_registration_rejects_short_password(unauthenticated_client):
 
 @pytest.mark.asyncio
 async def test_refresh_rotates_token_and_reuse_revokes_session(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(auth_module, "REFRESH_TOKEN_REUSE_GRACE_SECONDS", 0)
     monkeypatch.setattr(
         settings,
         "auth_secret_key",
@@ -312,3 +314,36 @@ async def test_refresh_rejects_untrusted_browser_origin(unauthenticated_client, 
 
     accepted = await unauthenticated_client.post("/auth/refresh")
     assert accepted.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_recent_refresh_reuse_can_retry_with_rotated_cookie(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "auth_secret_key",
+        "test-only-secret-key-that-is-long-enough-for-hmac",
+    )
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "parallel-refresh@example.com", "password": "a-long-test-password"},
+    )
+    login = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "parallel-refresh@example.com", "password": "a-long-test-password"},
+    )
+    assert login.status_code == 200
+    stale_cookie = unauthenticated_client.cookies.get("mindbase_refresh")
+
+    first_refresh = await unauthenticated_client.post("/auth/refresh")
+    assert first_refresh.status_code == 200
+    rotated_cookie = unauthenticated_client.cookies.get("mindbase_refresh")
+    assert rotated_cookie and rotated_cookie != stale_cookie
+
+    concurrent_refresh = await unauthenticated_client.post(
+        "/auth/refresh",
+        headers={"Cookie": f"mindbase_refresh={stale_cookie}"},
+    )
+    assert concurrent_refresh.status_code == 409
+
+    retry = await unauthenticated_client.post("/auth/refresh")
+    assert retry.status_code == 200
