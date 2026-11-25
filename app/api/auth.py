@@ -286,21 +286,60 @@ async def refresh_session(
 
 @router.post("/logout", status_code=204)
 async def logout(
+    request: Request,
     response: Response,
-    token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        payload = jwt.decode(token, _secret_key(), algorithms=["HS256"])
-        session_id = int(payload["sid"])
-    except (jwt.PyJWTError, KeyError, TypeError, ValueError):
-        _clear_refresh_cookie(response)
-        raise HTTPException(status_code=401, detail="Invalid authentication token")
+    # A short-lived access token may already be expired when the user logs out.
+    # The HttpOnly refresh cookie is an independent proof of the session.
+    bearer = request.headers.get("Authorization", "")
+    token_session_id: int | None = None
+    token_user_id: int | None = None
+    if bearer.lower().startswith("bearer "):
+        try:
+            payload = jwt.decode(
+                bearer[7:].strip(),
+                _secret_key(),
+                algorithms=["HS256"],
+                options={"verify_exp": False},
+            )
+            token_session_id = int(payload["sid"])
+            token_user_id = int(payload["sub"])
+        except (jwt.PyJWTError, KeyError, TypeError, ValueError):
+            token_session_id = None
+            token_user_id = None
 
-    session = await db.get(UserSession, session_id)
-    if session is not None and session.revoked_at is None:
-        session.revoked_at = _now()
-        await db.commit()
+    cookie_session_id: int | None = None
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if refresh_token:
+        token_result = await db.execute(
+            select(SessionRefreshToken).where(
+                SessionRefreshToken.token_hash == _hash_refresh_token(refresh_token)
+            )
+        )
+        refresh_record = token_result.scalar_one_or_none()
+        if refresh_record is not None:
+            cookie_session_id = refresh_record.session_id
+
+    if (
+        token_session_id is not None
+        and cookie_session_id is not None
+        and token_session_id != cookie_session_id
+    ):
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Session credentials do not match")
+
+    session_id = token_session_id or cookie_session_id
+    if session_id is not None:
+        query = select(UserSession).where(UserSession.id == session_id)
+        if token_user_id is not None:
+            query = query.where(UserSession.user_id == token_user_id)
+        result = await db.execute(query)
+        session = result.scalar_one_or_none()
+        if session is not None and session.revoked_at is None:
+            session.revoked_at = _now()
+            await db.commit()
+
     _clear_refresh_cookie(response)
     response.status_code = 204
     return response
