@@ -1105,3 +1105,16 @@ button:disabled {
     padding: 27px 22px;
   }
 }
+
+
+.auth-notice {
+  margin: 7px 0 0;
+  color: #8fdaa9;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.auth-switch:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}

@@ -43,7 +43,10 @@ type AskResponse = {
 function App() {
   const [query, setQuery] = useState('')
   const [accessToken, setAccessToken] = useState<string | null>(null)
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset'>('login')
+  const [authNotice, setAuthNotice] = useState('')
+  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get('reset') || '')
+  const verificationToken = useRef(new URLSearchParams(window.location.search).get('verify'))
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authError, setAuthError] = useState('')
@@ -73,6 +76,34 @@ function App() {
   const selectedDocumentRequestDocumentId = useRef<number | null>(null)
   const [aiAnswer, setAiAnswer] = useState('')
   const [answerSources, setAnswerSources] = useState<AskSource[]>([])
+
+  useEffect(() => {
+    const token = verificationToken.current
+    if (!token) return
+    let active = true
+    void fetch(`${API_URL}/auth/verify-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    }).then(async (response) => {
+      if (!active) return
+      if (response.ok) {
+        setAuthNotice('Email подтверждён. Теперь можно войти в аккаунт.')
+        setAuthMode('login')
+      } else {
+        const data = await response.json().catch(() => null)
+        setAuthError(data?.detail || 'Ссылка подтверждения недействительна или устарела.')
+      }
+      window.history.replaceState({}, '', window.location.pathname)
+    }).catch(() => {
+      if (active) setAuthError('Не удалось подтвердить email. Проверь подключение к серверу.')
+    })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    if (resetToken) setAuthMode('reset')
+  }, [resetToken])
 
   useEffect(() => {
     if (!editingDocument && !selectedDocument) return
@@ -313,7 +344,41 @@ function App() {
     event.preventDefault()
     setAuthLoading(true)
     setAuthError('')
+    setAuthNotice('')
     try {
+      if (authMode === 'forgot') {
+        const response = await fetch(`${API_URL}/auth/forgot-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: authEmail }),
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => null)
+          throw new Error(data?.detail || 'Не удалось отправить письмо.')
+        }
+        setAuthNotice('Если аккаунт с таким email существует, на него отправлена ссылка для сброса пароля.')
+        setAuthMode('login')
+        return
+      }
+
+      if (authMode === 'reset') {
+        const response = await fetch(`${API_URL}/auth/reset-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: resetToken, new_password: authPassword }),
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => null)
+          throw new Error(data?.detail || 'Ссылка сброса пароля недействительна или устарела.')
+        }
+        setAuthPassword('')
+        setResetToken('')
+        setAuthMode('login')
+        setAuthNotice('Пароль изменён. Войдите с новым паролем.')
+        window.history.replaceState({}, '', window.location.pathname)
+        return
+      }
+
       if (authMode === 'register') {
         const registration = await fetch(`${API_URL}/auth/register`, {
           method: 'POST',
@@ -323,6 +388,13 @@ function App() {
         if (!registration.ok) {
           const data = await registration.json().catch(() => null)
           throw new Error(data?.detail || 'Не удалось создать аккаунт.')
+        }
+        const account: { email_verified: boolean } = await registration.json()
+        if (!account.email_verified) {
+          setAuthPassword('')
+          setAuthMode('login')
+          setAuthNotice('Аккаунт создан. Проверьте почту и перейдите по ссылке подтверждения перед входом.')
+          return
         }
       }
 
@@ -348,8 +420,30 @@ function App() {
       setAuthError(
         error instanceof Error
           ? error.message
-          : 'Не удалось выполнить вход. Проверь подключение к серверу.',
+          : 'Не удалось выполнить запрос. Проверь подключение к серверу.',
       )
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  async function resendVerification() {
+    setAuthLoading(true)
+    setAuthError('')
+    setAuthNotice('')
+    try {
+      const response = await fetch(`${API_URL}/auth/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => null)
+        throw new Error(data?.detail || 'Не удалось отправить письмо.')
+      }
+      setAuthNotice('Если аккаунту требуется подтверждение, письмо будет отправлено.')
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Не удалось отправить письмо.')
     } finally {
       setAuthLoading(false)
     }
@@ -635,6 +729,22 @@ function App() {
     }
   }
   if (!accessToken) {
+    const isEmailOnly = authMode === 'forgot'
+    const isPasswordOnly = authMode === 'reset'
+    const heading = authMode === 'login'
+      ? 'С возвращением'
+      : authMode === 'register'
+        ? 'Создать аккаунт'
+        : authMode === 'forgot'
+          ? 'Восстановить пароль'
+          : 'Новый пароль'
+    const description = authMode === 'login'
+      ? 'Войдите, чтобы открыть свою приватную базу знаний.'
+      : authMode === 'register'
+        ? 'Создайте аккаунт и начните собирать собственную базу знаний.'
+        : authMode === 'forgot'
+          ? 'Укажите email, и мы отправим ссылку для восстановления доступа.'
+          : 'Введите новый пароль для своего аккаунта.'
     return (
       <main className="auth-screen">
         <section className="auth-card">
@@ -643,51 +753,80 @@ function App() {
             <span>Mindbase<span className="brand-dot">.</span></span>
           </div>
           <p className="auth-eyebrow">PERSONAL KNOWLEDGE WORKSPACE</p>
-          <h1>{authMode === 'login' ? 'С возвращением' : 'Создать аккаунт'}</h1>
-          <p className="auth-description">
-            {authMode === 'login'
-              ? 'Войдите, чтобы открыть свою приватную базу знаний.'
-              : 'Создайте аккаунт и начните собирать собственную базу знаний.'}
-          </p>
+          <h1>{heading}</h1>
+          <p className="auth-description">{description}</p>
           <form className="auth-form" onSubmit={submitAuth}>
-            <label htmlFor="auth-email">Email</label>
-            <input
-              id="auth-email"
-              type="email"
-              autoComplete="email"
-              value={authEmail}
-              onChange={(event) => setAuthEmail(event.target.value)}
-              required
-            />
-            <label htmlFor="auth-password">Пароль</label>
-            <input
-              id="auth-password"
-              type="password"
-              autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-              minLength={12}
-              value={authPassword}
-              onChange={(event) => setAuthPassword(event.target.value)}
-              required
-            />
+            {!isPasswordOnly && (
+              <>
+                <label htmlFor="auth-email">Email</label>
+                <input
+                  id="auth-email"
+                  type="email"
+                  autoComplete="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  required
+                />
+              </>
+            )}
+            {!isEmailOnly && (
+              <>
+                <label htmlFor="auth-password">Пароль</label>
+                <input
+                  id="auth-password"
+                  type="password"
+                  autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                  minLength={12}
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  required
+                />
+              </>
+            )}
+            {authNotice && <p className="auth-notice" role="status">{authNotice}</p>}
             {authError && <p className="auth-error" role="alert">{authError}</p>}
             <button className="auth-submit" type="submit" disabled={authLoading}>
               {authLoading
                 ? 'Подождите…'
-                : authMode === 'login' ? 'Войти' : 'Создать аккаунт'}
+                : authMode === 'login'
+                  ? 'Войти'
+                  : authMode === 'register'
+                    ? 'Создать аккаунт'
+                    : authMode === 'forgot'
+                      ? 'Отправить ссылку'
+                      : 'Сменить пароль'}
             </button>
           </form>
-          <button
-            className="auth-switch"
-            type="button"
-            onClick={() => {
-              setAuthMode((mode) => mode === 'login' ? 'register' : 'login')
-              setAuthError('')
-            }}
-          >
-            {authMode === 'login'
-              ? 'Нет аккаунта? Зарегистрироваться'
-              : 'Уже есть аккаунт? Войти'}
-          </button>
+          {authMode === 'login' && (
+            <>
+              <button className="auth-switch" type="button" onClick={() => { setAuthMode('forgot'); setAuthError(''); setAuthNotice('') }}>
+                Забыли пароль?
+              </button>
+              <button className="auth-switch" type="button" onClick={() => void resendVerification()} disabled={authLoading}>
+                Не пришло письмо подтверждения?
+              </button>
+            </>
+          )}
+          {(authMode === 'login' || authMode === 'register') && (
+            <button
+              className="auth-switch"
+              type="button"
+              onClick={() => {
+                setAuthMode((mode) => mode === 'login' ? 'register' : 'login')
+                setAuthError('')
+                setAuthNotice('')
+              }}
+            >
+              {authMode === 'login'
+                ? 'Нет аккаунта? Зарегистрироваться'
+                : 'Уже есть аккаунт? Войти'}
+            </button>
+          )}
+          {(authMode === 'forgot' || authMode === 'reset') && (
+            <button className="auth-switch" type="button" onClick={() => { setAuthMode('login'); setAuthError(''); setAuthNotice('') }}>
+              Вернуться ко входу
+            </button>
+          )}
           {authMode === 'register' && (
             <p className="auth-password-hint">Пароль должен содержать не менее 12 символов.</p>
           )}

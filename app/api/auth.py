@@ -47,6 +47,7 @@ class RegisterRequest(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
+    email_verified: bool
 
 
 class TokenResponse(BaseModel):
@@ -146,8 +147,8 @@ async def _send_action_email(user: User, token: str, purpose: str) -> None:
         subject = "Подтвердите email в Mindbase"
         link = f"{base_url}/?verify={token}"
         message = (
-            "Чтобы подтвердить адрес электронной почты в Mindbase, откройте ссылку:\\n\\n"
-            f"{link}\\n\\nСсылка действительна 24 часа. Если вы не создавали аккаунт, "
+            "Чтобы подтвердить адрес электронной почты в Mindbase, откройте ссылку:\n\n"
+            f"{link}\\n\nСсылка действительна 24 часа. Если вы не создавали аккаунт, "
             "просто проигнорируйте это письмо."
         )
     else:
