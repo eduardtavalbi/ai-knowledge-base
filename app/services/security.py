@@ -81,13 +81,29 @@ async def enforce_rate_limit(
                     else_=1,
                 ),
             },
-        ).returning(RateLimitBucket.request_count)
-        count = (await db.execute(statement)).scalar_one()
+        ).returning(
+            RateLimitBucket.request_count,
+            RateLimitBucket.window_started_at,
+        )
+        result = await db.execute(statement)
+        count, active_window_start = result.one()
         if count > limit:
             exceeded = True
+            if active_window_start.tzinfo is None:
+                active_window_start = active_window_start.replace(tzinfo=timezone.utc)
+            current_time = datetime.now(timezone.utc)
             retry_after = max(
                 retry_after,
-                int((window_start + timedelta(seconds=window_seconds) - now).total_seconds()) + 1,
+                max(
+                    1,
+                    int(
+                        (
+                            active_window_start
+                            + timedelta(seconds=window_seconds)
+                            - current_time
+                        ).total_seconds()
+                    ) + 1,
+                ),
             )
 
     await db.execute(delete(RateLimitBucket).where(RateLimitBucket.window_started_at < now - timedelta(days=1)))
