@@ -67,27 +67,6 @@ function App() {
   const [answerSources, setAnswerSources] = useState<AskSource[]>([])
 
   useEffect(() => {
-    void loadDocuments()
-  }, [])
-
-  useEffect(() => {
-    if (!editingDocument && !selectedDocument) return
-
-    function handleModalKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
-
-      if (editingDocument) {
-        if (!savingEdit) setEditingDocument(null)
-      } else {
-        closeSelectedDocument()
-      }
-    }
-
-    window.addEventListener('keydown', handleModalKeyDown)
-    return () => window.removeEventListener('keydown', handleModalKeyDown)
-  }, [editingDocument, selectedDocument, savingEdit])
-
-  useEffect(() => {
     if (!editingDocument && !selectedDocument) return
 
     const dialog = window.document.querySelector<HTMLElement>(
@@ -160,6 +139,23 @@ function App() {
     setSelectedDocumentError('')
   }
 
+
+  useEffect(() => {
+    if (!editingDocument && !selectedDocument) return
+
+    function handleModalKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+
+      if (editingDocument) {
+        if (!savingEdit) setEditingDocument(null)
+      } else {
+        closeSelectedDocument()
+      }
+    }
+
+    window.addEventListener('keydown', handleModalKeyDown)
+    return () => window.removeEventListener('keydown', handleModalKeyDown)
+  }, [editingDocument, selectedDocument, savingEdit])
   async function openDocument(document: DocumentItem) {
     const requestId = ++selectedDocumentRequestId.current
     selectedDocumentRequestDocumentId.current = document.id
@@ -229,6 +225,10 @@ function App() {
     }
   }
 
+
+  useEffect(() => {
+    void loadDocuments()
+  }, [])
   async function searchDocuments(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
