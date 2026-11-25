@@ -61,6 +61,7 @@ function App() {
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const searchRequestId = useRef(0)
+  const apiRequestId = useRef(0)
   const documentsRequestId = useRef(0)
   const selectedDocumentRequestId = useRef(0)
   const selectedDocumentRequestDocumentId = useRef<number | null>(null)
@@ -191,14 +192,15 @@ function App() {
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> {
+    const requestId = ++apiRequestId.current
     try {
       const response = await fetch(input, init)
       // An HTTP error still proves that the API is reachable; only a failed
       // network request should switch the connection indicator to offline.
-      setApiStatus('online')
+      if (requestId === apiRequestId.current) setApiStatus('online')
       return response
     } catch (error) {
-      setApiStatus('offline')
+      if (requestId === apiRequestId.current) setApiStatus('offline')
       throw error
     }
   }
@@ -216,7 +218,6 @@ function App() {
       const data: DocumentItem[] = await response.json()
       if (requestId === documentsRequestId.current) {
         setDocuments(data)
-        setApiStatus('online')
       }
     } catch (error) {
       if (requestId !== documentsRequestId.current) return
@@ -274,7 +275,6 @@ function App() {
       const data: AskResponse = await response.json()
       if (requestId !== searchRequestId.current) return
 
-      setApiStatus('online')
       setAiAnswer(data.answer)
       setAnswerSources(data.sources ?? [])
 
