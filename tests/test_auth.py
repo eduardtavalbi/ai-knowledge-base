@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from app.api import auth as auth_module
 from app.core.config import settings
 from app.models.security_audit_event import SecurityAuditEvent
+from app.services.security import hash_security_identifier
 from app.models.user import User
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
@@ -703,6 +704,13 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
             token_hash="a" * 64,
             expires_at=auth_module._now(),
         ))
+        # Recovery audit events deliberately have no user_id; they must still
+        # be removed when the matching account is deleted.
+        session.add(SecurityAuditEvent(
+            event_type="password_reset_requested",
+            email_hash=hash_security_identifier(user.email.casefold()),
+            ip_hash="b" * 64,
+        ))
         await session.commit()
 
     deleted = await unauthenticated_client.request(
@@ -742,5 +750,15 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
                 select(func.count())
                 .select_from(SecurityAuditEvent)
                 .where(SecurityAuditEvent.user_id == deleted_user_id)
+            )
+        ).scalar_one() == 0
+        assert (
+            await session.execute(
+                select(func.count())
+                .select_from(SecurityAuditEvent)
+                .where(
+                    SecurityAuditEvent.email_hash
+                    == hash_security_identifier("delete-me@example.com")
+                )
             )
         ).scalar_one() == 0
