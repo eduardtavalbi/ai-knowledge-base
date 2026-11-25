@@ -122,10 +122,20 @@ function App() {
 
       const first = elements[0]
       const last = elements[elements.length - 1]
-      if (event.shiftKey && window.document.activeElement === first) {
+      const activeElement = window.document.activeElement
+
+      // Keep keyboard focus inside the modal even if another script or
+      // browser interaction moved it outside the dialog.
+      if (!dialog.contains(activeElement)) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+        return
+      }
+
+      if (event.shiftKey && activeElement === first) {
         event.preventDefault()
         last.focus()
-      } else if (!event.shiftKey && window.document.activeElement === last) {
+      } else if (!event.shiftKey && activeElement === last) {
         event.preventDefault()
         first.focus()
       }
