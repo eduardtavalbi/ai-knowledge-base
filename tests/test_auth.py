@@ -704,10 +704,11 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
             token_hash="a" * 64,
             expires_at=auth_module._now(),
         ))
-        # Recovery audit events deliberately have no user_id; they must still
-        # be removed when the matching account is deleted.
+        # Known-account recovery events are linked internally for complete
+        # account deletion; unknown-email events remain pseudonymous.
         session.add(SecurityAuditEvent(
             event_type="password_reset_requested",
+            user_id=user.id,
             email_hash=hash_security_identifier(user.email.casefold()),
             ip_hash="b" * 64,
         ))
