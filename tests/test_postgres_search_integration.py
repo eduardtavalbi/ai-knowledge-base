@@ -100,7 +100,7 @@ async def test_postgres_hybrid_search_combines_vector_and_full_text(
         ),
         patch(
             "app.services.search.generate_embeddings",
-            return_value=query_vector,
+            return_value=[query_vector],
         ),
     ):
         results = await search_document_chunks(
@@ -152,7 +152,7 @@ async def test_postgres_hybrid_search_filters_weak_vector_matches(
         ),
         patch(
             "app.services.search.generate_embeddings",
-            return_value=[1.0] + [0.0] * 383,
+            return_value=[[1.0] + [0.0] * 383],
         ),
     ):
         results = await search_document_chunks(
