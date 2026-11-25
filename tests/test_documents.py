@@ -131,6 +131,17 @@ async def test_delete_document(client):
 
 
 @pytest.mark.asyncio
+async def test_upload_rejects_missing_filename_with_clear_error(client):
+    response = await client.post(
+        "/documents/upload",
+        files={"file": ("", b"Document content", "text/plain")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Filename is required"
+
+
+@pytest.mark.asyncio
 async def test_upload_text_file(client):
     response = await client.post(
         "/documents/upload",
