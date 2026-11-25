@@ -49,6 +49,8 @@ function App() {
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking')
   const [activePage, setActivePage] = useState<'search' | 'documents'>('search')
   const [selectedDocument, setSelectedDocument] = useState<DocumentItem | null>(null)
+  const [selectedDocumentLoading, setSelectedDocumentLoading] = useState(false)
+  const [selectedDocumentError, setSelectedDocumentError] = useState('')
   const [editingDocument, setEditingDocument] = useState<DocumentItem | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
@@ -59,6 +61,7 @@ function App() {
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const searchRequestId = useRef(0)
+  const selectedDocumentRequestId = useRef(0)
   const [aiAnswer, setAiAnswer] = useState('')
   const [answerSources, setAnswerSources] = useState<AskSource[]>([])
 
@@ -75,7 +78,7 @@ function App() {
       if (editingDocument) {
         if (!savingEdit) setEditingDocument(null)
       } else {
-        setSelectedDocument(null)
+        closeSelectedDocument()
       }
     }
 
@@ -147,6 +150,41 @@ function App() {
       if (previouslyFocused?.isConnected) previouslyFocused.focus()
     }
   }, [editingDocument, selectedDocument])
+
+  function closeSelectedDocument() {
+    selectedDocumentRequestId.current += 1
+    setSelectedDocument(null)
+    setSelectedDocumentLoading(false)
+    setSelectedDocumentError('')
+  }
+
+  async function openDocument(document: DocumentItem) {
+    const requestId = ++selectedDocumentRequestId.current
+    setSelectedDocument(document)
+    setSelectedDocumentLoading(true)
+    setSelectedDocumentError('')
+
+    try {
+      const response = await requestApi(`${API_URL}/documents/${document.id}`)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const fullDocument: DocumentItem = await response.json()
+      if (requestId === selectedDocumentRequestId.current) {
+        setSelectedDocument(fullDocument)
+      }
+    } catch (error) {
+      if (requestId === selectedDocumentRequestId.current) {
+        setSelectedDocumentError(
+          error instanceof Error
+            ? `Не удалось загрузить документ: ${error.message}`
+            : 'Не удалось загрузить полный документ.',
+        )
+      }
+    } finally {
+      if (requestId === selectedDocumentRequestId.current) {
+        setSelectedDocumentLoading(false)
+      }
+    }
+  }
 
   async function requestApi(
     input: RequestInfo | URL,
@@ -494,7 +532,7 @@ function App() {
                     <button
                       type="button"
                       className="result-open-button"
-                      onClick={() => setSelectedDocument(document)}
+                      onClick={() => void openDocument(document)}
                       aria-label={`Открыть документ ${document.title}`}
                     >
                       <div className="document-icon">
@@ -806,7 +844,7 @@ function App() {
       {selectedDocument && (
         <div
           className="modal-overlay"
-          onClick={() => setSelectedDocument(null)}
+          onClick={closeSelectedDocument}
         >
           <section
             className="document-modal"
@@ -818,7 +856,7 @@ function App() {
           >
             <button
               className="modal-close"
-              onClick={() => setSelectedDocument(null)}
+              onClick={closeSelectedDocument}
               aria-label="Закрыть документ"
             >
               <X size={20} />
@@ -829,9 +867,13 @@ function App() {
             </div>
 
             <h2 id="document-modal-title">{selectedDocument.title}</h2>
-            <p className="document-full-content">
-              {selectedDocument.content}
-            </p>
+            {selectedDocumentLoading ? (
+              <p className="document-full-content" role="status">Загрузка полного документа…</p>
+            ) : selectedDocumentError ? (
+              <p className="document-full-content" role="alert">{selectedDocumentError}</p>
+            ) : (
+              <p className="document-full-content">{selectedDocument.content}</p>
+            )}
           </section>
         </div>
       )}
