@@ -17,6 +17,8 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
 from app.models.user_session import UserSession, SessionRefreshToken
+from app.models.account_action_token import AccountActionToken
+from app.services.email import send_account_email
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -25,6 +27,8 @@ ACCESS_TOKEN_MINUTES = 30
 REFRESH_TOKEN_DAYS = 30
 REFRESH_TOKEN_REUSE_GRACE_SECONDS = 10
 REFRESH_COOKIE_NAME = "mindbase_refresh"
+EMAIL_VERIFICATION_TOKEN_HOURS = 24
+PASSWORD_RESET_TOKEN_MINUTES = 60
 
 
 class RegisterRequest(BaseModel):
@@ -57,6 +61,24 @@ class SessionResponse(BaseModel):
     expires_at: datetime
 
 
+class EmailTokenRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().casefold()
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+
+
+class PasswordResetRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+    new_password: str = Field(min_length=12, max_length=128)
+
+
 def _secret_key() -> str:
     secret = settings.auth_secret_key
     if len(secret) < 32 or secret == "CHANGE_ME_USE_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS":
@@ -81,6 +103,62 @@ def _hash_refresh_token(token: str) -> str:
 
 def _new_refresh_token() -> str:
     return secrets.token_urlsafe(48)
+
+
+def _new_action_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def _email_delivery_configured() -> bool:
+    return bool(settings.smtp_host and settings.smtp_from_email)
+
+
+async def _create_action_token(
+    user: User,
+    db: AsyncSession,
+    purpose: str,
+    expires_in: timedelta,
+) -> str:
+    existing = await db.execute(
+        select(AccountActionToken).where(
+            AccountActionToken.user_id == user.id,
+            AccountActionToken.purpose == purpose,
+            AccountActionToken.used_at.is_(None),
+        )
+    )
+    now = _now()
+    for record in existing.scalars().all():
+        record.used_at = now
+    raw_token = _new_action_token()
+    db.add(AccountActionToken(
+        user_id=user.id,
+        purpose=purpose,
+        token_hash=_hash_refresh_token(raw_token),
+        expires_at=now + expires_in,
+    ))
+    await db.commit()
+    return raw_token
+
+
+async def _send_action_email(user: User, token: str, purpose: str) -> None:
+    base_url = settings.frontend_public_url.rstrip("/")
+    if purpose == "email_verification":
+        subject = "Подтвердите email в Mindbase"
+        link = f"{base_url}/?verify={token}"
+        message = (
+            "Чтобы подтвердить адрес электронной почты в Mindbase, откройте ссылку:\\n\\n"
+            f"{link}\\n\\nСсылка действительна 24 часа. Если вы не создавали аккаунт, "
+            "просто проигнорируйте это письмо."
+        )
+    else:
+        subject = "Восстановление пароля Mindbase"
+        link = f"{base_url}/?reset={token}"
+        message = (
+            "Чтобы установить новый пароль Mindbase, откройте ссылку:\\n\\n"
+            f"{link}\\n\\nСсылка действительна 60 минут. Если вы не запрашивали "
+            "сброс пароля, просто проигнорируйте это письмо."
+        )
+    await send_account_email(user.email, subject, message)
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -185,9 +263,17 @@ async def register(
     request: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    verification_required = settings.email_verification_required
+    if verification_required and not _email_delivery_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Email delivery is not configured",
+        )
+
     user = User(
         email=request.email,
         hashed_password=await asyncio.to_thread(password_hasher.hash, request.password),
+        email_verified=not verification_required,
     )
     db.add(user)
     try:
@@ -199,23 +285,140 @@ async def register(
             status_code=409,
             detail="An account with this email already exists",
         ) from exc
+
+    if verification_required:
+        token = await _create_action_token(
+            user, db, "email_verification",
+            timedelta(hours=EMAIL_VERIFICATION_TOKEN_HOURS),
+        )
+        try:
+            await _send_action_email(user, token, "email_verification")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Account created, but verification email could not be sent. Request a new verification email.",
+            ) from exc
     return user
 
 
-async def _create_session(user: User, db: AsyncSession) -> tuple[UserSession, str]:
-    refresh_token = _new_refresh_token()
-    token_hash = _hash_refresh_token(refresh_token)
-    session = UserSession(
-        user_id=user.id,
-        refresh_token_hash=token_hash,
-        expires_at=_now() + timedelta(days=REFRESH_TOKEN_DAYS),
+@router.post("/verify-email", response_model=UserResponse)
+async def verify_email(
+    request: VerifyEmailRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(AccountActionToken)
+        .where(
+            AccountActionToken.token_hash == _hash_refresh_token(request.token),
+            AccountActionToken.purpose == "email_verification",
+        )
+        .with_for_update()
     )
-    db.add(session)
-    await db.flush()
-    db.add(SessionRefreshToken(session_id=session.id, token_hash=token_hash))
+    token_record = result.scalar_one_or_none()
+    if (
+        token_record is None
+        or token_record.used_at is not None
+        or _aware(token_record.expires_at) <= _now()
+    ):
+        raise HTTPException(status_code=400, detail="Verification link is invalid or expired")
+
+    user = await db.get(User, token_record.user_id)
+    if user is None:
+        raise HTTPException(status_code=400, detail="Verification link is invalid or expired")
+    token_record.used_at = _now()
+    user.email_verified = True
     await db.commit()
-    await db.refresh(session)
-    return session, refresh_token
+    await db.refresh(user)
+    return user
+
+
+@router.post("/resend-verification", status_code=202)
+async def resend_verification(
+    request: EmailTokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    if not settings.email_verification_required:
+        return {"message": "If the account requires verification, an email will be sent."}
+    if not _email_delivery_configured():
+        raise HTTPException(status_code=503, detail="Email delivery is not configured")
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalar_one_or_none()
+    if user is not None and not user.email_verified:
+        token = await _create_action_token(
+            user, db, "email_verification",
+            timedelta(hours=EMAIL_VERIFICATION_TOKEN_HOURS),
+        )
+        await _send_action_email(user, token, "email_verification")
+    return {"message": "If the account requires verification, an email will be sent."}
+
+
+@router.post("/forgot-password", status_code=202)
+async def forgot_password(
+    request: EmailTokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    if not _email_delivery_configured():
+        raise HTTPException(status_code=503, detail="Email delivery is not configured")
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalar_one_or_none()
+    if user is not None:
+        token = await _create_action_token(
+            user, db, "password_reset",
+            timedelta(minutes=PASSWORD_RESET_TOKEN_MINUTES),
+        )
+        await _send_action_email(user, token, "password_reset")
+    return {"message": "If an account with this email exists, a password reset email will be sent."}
+
+
+@router.post("/reset-password", status_code=204)
+async def reset_password(
+    request: PasswordResetRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(AccountActionToken)
+        .where(
+            AccountActionToken.token_hash == _hash_refresh_token(request.token),
+            AccountActionToken.purpose == "password_reset",
+        )
+        .with_for_update()
+    )
+    token_record = result.scalar_one_or_none()
+    if (
+        token_record is None
+        or token_record.used_at is not None
+        or _aware(token_record.expires_at) <= _now()
+    ):
+        raise HTTPException(status_code=400, detail="Password reset link is invalid or expired")
+
+    user = await db.get(User, token_record.user_id)
+    if user is None:
+        raise HTTPException(status_code=400, detail="Password reset link is invalid or expired")
+
+    user.hashed_password = await asyncio.to_thread(password_hasher.hash, request.new_password)
+    token_record.used_at = _now()
+    other_tokens = await db.execute(
+        select(AccountActionToken).where(
+            AccountActionToken.user_id == user.id,
+            AccountActionToken.used_at.is_(None),
+        )
+    )
+    for other_token in other_tokens.scalars().all():
+        other_token.used_at = _now()
+
+    sessions = await db.execute(
+        select(UserSession).where(
+            UserSession.user_id == user.id,
+            UserSession.revoked_at.is_(None),
+        )
+    )
+    for session in sessions.scalars().all():
+        session.revoked_at = _now()
+
+    await db.commit()
+    response.status_code = 204
+    return response
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -238,6 +441,12 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if settings.email_verification_required and not user.email_verified:
+        raise HTTPException(
+            status_code=403,
+            detail="Please verify your email address before signing in",
         )
 
     session, refresh_token = await _create_session(user, db)

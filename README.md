@@ -17,6 +17,7 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 - **Database migrations** — manages schema changes with Alembic.
 - **Account security** — Argon2id password hashing, short-lived access tokens, HttpOnly refresh cookies, refresh-token rotation and replay detection.
 - **Session management** — revoke the current session on logout and list/revoke other active sessions.
+- **Account recovery** — optional email verification, one-time password-reset links, and session revocation after password changes.
 - **Automated tests** — tests the API and application behavior with pytest.
 - **Docker Compose** — provides a containerized development environment for the backend and database.
 
@@ -118,6 +119,15 @@ DEBUG=false
 AUTH_SECRET_KEY=GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
 REFRESH_TOKEN_COOKIE_SECURE=false
 FRONTEND_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+FRONTEND_PUBLIC_URL=http://localhost:5173
+EMAIL_VERIFICATION_REQUIRED=false
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM_EMAIL=
+SMTP_STARTTLS=true
+SMTP_USE_SSL=false
 DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5434/knowledge_base
 POSTGRES_DB=knowledge_base
 POSTGRES_USER=postgres
@@ -126,7 +136,7 @@ GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 GEMINI_MODEL=gemini-3.8-flash
 ```
 
-Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys. For local HTTP development, keep `REFRESH_TOKEN_COOKIE_SECURE=false`; set it to `true` behind HTTPS in production. Set `FRONTEND_ORIGINS` to the exact comma-separated origins serving the browser app (without trailing slashes).
+Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys. For local HTTP development, keep `REFRESH_TOKEN_COOKIE_SECURE=false`; set it to `true` behind HTTPS in production. Set `FRONTEND_ORIGINS` to the exact comma-separated origins serving the browser app (without trailing slashes). To require verified email addresses, set `EMAIL_VERIFICATION_REQUIRED=true` and configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`, and any required SMTP credentials; set `FRONTEND_PUBLIC_URL` to the public frontend URL.
 
 If you are upgrading a database that already contains documents, set `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` before applying the ownership migration. The migration assigns all existing documents to this account; choose credentials you control. These variables are only needed for a database with existing documents.
 
@@ -196,6 +206,10 @@ python -m pytest -v
 | `POST` | `/auth/refresh` | Rotate the HttpOnly refresh cookie and issue a new access token |
 | `POST` | `/auth/logout` | Revoke the current session |
 | `GET` | `/auth/me` | Get the authenticated account |
+| `POST` | `/auth/verify-email` | Verify an email using a one-time token |
+| `POST` | `/auth/resend-verification` | Resend an email verification link |
+| `POST` | `/auth/forgot-password` | Request a password reset link |
+| `POST` | `/auth/reset-password` | Set a new password using a one-time token |
 | `GET` | `/auth/sessions` | List the account's active sessions |
 | `DELETE` | `/auth/sessions/{session_id}` | Revoke one of the account's sessions |
 | `GET` | `/documents/` | List the current user's documents |
@@ -243,5 +257,5 @@ Mindbase is evolving into a multi-tenant commercial application. Each account ow
 - Use `.env.example` as a template with placeholder values only.
 - Document endpoints require a bearer access token. Passwords are hashed with Argon2id; JWT access tokens expire after 30 minutes.
 - Every document query and retrieval path is scoped by the authenticated owner. Identical content can exist in separate accounts without cross-account deduplication.
-- Session refresh, token rotation/replay detection, logout, and per-session revocation are implemented. Before public commercial deployment, still add email verification, password reset, abuse/rate limiting, audit logging, and production secret management.
+- Session refresh, token rotation/replay detection, logout, per-session revocation, email verification, and password reset are implemented. Before public commercial deployment, still add abuse/rate limiting, audit logging, and production secret management.
 - Docker Compose binds the API and database ports to loopback and requires an explicit `POSTGRES_PASSWORD`; do not replace this with a default or weak password.

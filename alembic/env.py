@@ -2,6 +2,7 @@ from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.models.user import User
 from app.models.user_session import UserSession
+from app.models.account_action_token import AccountActionToken
 
 from logging.config import fileConfig
 import os
