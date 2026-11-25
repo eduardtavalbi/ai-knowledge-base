@@ -247,7 +247,6 @@ async def test_postgres_semantic_candidate_query_can_use_hnsw_index(
                   WHERE document.id = chunk.document_id
                     AND document.user_id = :user_id
               )
-              AND chunk.embedding <=> CAST(:query_vector AS vector) <= 0.55
             ORDER BY chunk.embedding <=> CAST(:query_vector AS vector)
             LIMIT 50
             """
