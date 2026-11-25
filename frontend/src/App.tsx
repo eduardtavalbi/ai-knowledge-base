@@ -707,7 +707,7 @@ function App() {
                   <button
                     type="button"
                     className="result-open-button"
-                    onClick={() => setSelectedDocument(document)}
+                    onClick={() => void openDocument(document)}
                     aria-label={`Открыть документ ${document.title}`}
                   >
                     <div className="document-icon"><FileText size={21} /></div>
