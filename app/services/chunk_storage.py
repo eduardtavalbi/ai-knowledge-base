@@ -25,7 +25,7 @@ def _group_source_segments(
         ):
             previous = grouped[-1]
             grouped[-1] = SourceSegment(
-                text=f"{previous.text}\\n\\n{segment.text}",
+                text=f"{previous.text}\n\n{segment.text}",
                 page_number=previous.page_number,
                 section_title=previous.section_title,
             )
