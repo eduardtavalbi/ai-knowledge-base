@@ -1,4 +1,5 @@
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,29 @@ class Settings(BaseSettings):
     auth_secret_key: str = "CHANGE_ME_USE_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS"
     refresh_token_cookie_secure: bool = False
     frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    frontend_public_url: str = "http://localhost:5173"
+    email_verification_required: bool = False
+    auth_login_ip_limit: int = Field(default=20, gt=0)
+    auth_login_identity_limit: int = Field(default=8, gt=0)
+    auth_login_window_seconds: int = Field(default=900, gt=0)
+    auth_recovery_ip_limit: int = Field(default=20, gt=0)
+    auth_recovery_identity_limit: int = Field(default=4, gt=0)
+    auth_recovery_window_seconds: int = Field(default=3600, gt=0)
+    auth_registration_ip_limit: int = Field(default=10, gt=0)
+    auth_registration_window_seconds: int = Field(default=3600, gt=0)
+    ai_ask_ip_limit: int = Field(default=60, gt=0)
+    ai_ask_identity_limit: int = Field(default=20, gt=0)
+    ai_ask_window_seconds: int = Field(default=60, gt=0)
+    ai_search_ip_limit: int = Field(default=120, gt=0)
+    ai_search_identity_limit: int = Field(default=60, gt=0)
+    ai_search_window_seconds: int = Field(default=60, gt=0)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_starttls: bool = True
+    smtp_use_ssl: bool = False
     migration_owner_email: str = ""
     migration_owner_password: str = ""
     deepseek_api_key: str = ""

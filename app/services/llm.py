@@ -145,6 +145,7 @@ async def generate_answer(question: str, context: str) -> str:
                 f"Вопрос:\n{question}"
             ),
             config=types.GenerateContentConfig(
+                max_output_tokens=1024,
                 system_instruction=(
                     "Ты — ассистент корпоративной базы знаний. Используй "
                     "предоставленный контекст как единственный источник фактов. "
@@ -206,6 +207,7 @@ async def expand_search_queries(
                 f"Исходный запрос: {original}"
             ),
             config=types.GenerateContentConfig(
+                max_output_tokens=128,
                 system_instruction=(
                     "Ты преобразуешь поисковые запросы. Верни только "
                     "альтернативные формулировки, по одной на строку."

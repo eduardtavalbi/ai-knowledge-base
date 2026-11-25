@@ -17,6 +17,9 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 - **Database migrations** — manages schema changes with Alembic.
 - **Account security** — Argon2id password hashing, short-lived access tokens, HttpOnly refresh cookies, refresh-token rotation and replay detection.
 - **Session management** — revoke the current session on logout and list/revoke other active sessions.
+- **Account recovery** — optional email verification, one-time password-reset links, and session revocation after password changes.
+- **Abuse protection** — PostgreSQL-backed rate limits for authentication, recovery, and AI question-generation endpoints, shared across API workers.
+- **Security audit trail** — records authentication and account-security events without storing passwords or raw action tokens.
 - **Automated tests** — tests the API and application behavior with pytest.
 - **Docker Compose** — provides a containerized development environment for the backend and database.
 
@@ -118,15 +121,35 @@ DEBUG=false
 AUTH_SECRET_KEY=GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
 REFRESH_TOKEN_COOKIE_SECURE=false
 FRONTEND_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+FRONTEND_PUBLIC_URL=http://localhost:5173
+EMAIL_VERIFICATION_REQUIRED=false
+AI_ASK_IP_LIMIT=60
+AI_ASK_IDENTITY_LIMIT=20
+AI_ASK_WINDOW_SECONDS=60
+AI_SEARCH_IP_LIMIT=120
+AI_SEARCH_IDENTITY_LIMIT=60
+AI_SEARCH_WINDOW_SECONDS=60
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM_EMAIL=
+SMTP_STARTTLS=true
+SMTP_USE_SSL=false
 DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5434/knowledge_base
 POSTGRES_DB=knowledge_base
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=YOUR_PASSWORD
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 GEMINI_MODEL=gemini-3.8-flash
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
 ```
 
-Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys. For local HTTP development, keep `REFRESH_TOKEN_COOKIE_SECURE=false`; set it to `true` behind HTTPS in production. Set `FRONTEND_ORIGINS` to the exact comma-separated origins serving the browser app (without trailing slashes).
+Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys. For local HTTP development, keep `REFRESH_TOKEN_COOKIE_SECURE=false`; set it to `true` behind HTTPS in production. Set `FRONTEND_ORIGINS` to the exact comma-separated origins serving the browser app (without trailing slashes). To require verified email addresses, set `EMAIL_VERIFICATION_REQUIRED=true` and configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`, and any required SMTP credentials; set `FRONTEND_PUBLIC_URL` to the public frontend URL.
+
+Authentication abuse-protection defaults are 20 login attempts per IP and 8 per email/IP pair per 15 minutes; recovery endpoints allow 20 requests per IP and 4 per email/IP pair per hour; registration allows 10 attempts per IP per hour. Tune these values with the `AUTH_*` variables above. AI question generation is separately limited to 60 requests per IP and 20 requests per authenticated user/IP pair per minute by default; tune it with `AI_ASK_IP_LIMIT`, `AI_ASK_IDENTITY_LIMIT`, and `AI_ASK_WINDOW_SECONDS`. Document search endpoints are limited to 120 requests per IP and 60 requests per authenticated user/IP pair per minute by default; tune them with `AI_SEARCH_IP_LIMIT`, `AI_SEARCH_IDENTITY_LIMIT`, and `AI_SEARCH_WINDOW_SECONDS`. Counters are stored in PostgreSQL, so limits are shared across API workers. The API uses the direct client address and does not trust arbitrary forwarded-IP headers; configure trusted proxy handling at the deployment edge before placing it behind a reverse proxy. Security audit events store keyed digests of email, IP, and user-agent values rather than raw values, and never store passwords or action tokens. Rate-limit buckets older than 24 hours are cleaned up during authentication requests; define an operational retention policy for audit events before public deployment.
 
 If you are upgrading a database that already contains documents, set `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` before applying the ownership migration. The migration assigns all existing documents to this account; choose credentials you control. These variables are only needed for a database with existing documents.
 
@@ -137,6 +160,14 @@ docker compose up -d db
 ```
 
 The database is exposed on `127.0.0.1:5434` only. The API is also bound to `127.0.0.1:8000`; neither service is exposed to other machines on the network. Docker Compose creates the persistent volume `ai_knowledge_base_vector_data` automatically on first startup.
+
+To run the API in Docker as well (instead of starting it with the local Python command below), run:
+
+```powershell
+docker compose up -d --build api
+```
+
+The API container applies pending Alembic migrations before starting Uvicorn and exposes `/health` as a container health check. If you are upgrading a database that already contains documents, put `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` in `.env` before starting it. Do not start the containerized API and the local Uvicorn server at the same time because both use port `8000`.
 
 ### 4. Set up the Python environment
 
@@ -196,6 +227,12 @@ python -m pytest -v
 | `POST` | `/auth/refresh` | Rotate the HttpOnly refresh cookie and issue a new access token |
 | `POST` | `/auth/logout` | Revoke the current session |
 | `GET` | `/auth/me` | Get the authenticated account |
+| `GET` | `/auth/me/export` | Download the current account profile and documents as JSON |
+| `DELETE` | `/auth/me` | Permanently delete the account after password and confirmation checks |
+| `POST` | `/auth/verify-email` | Verify an email using a one-time token |
+| `POST` | `/auth/resend-verification` | Resend an email verification link |
+| `POST` | `/auth/forgot-password` | Request a password reset link |
+| `POST` | `/auth/reset-password` | Set a new password using a one-time token |
 | `GET` | `/auth/sessions` | List the account's active sessions |
 | `DELETE` | `/auth/sessions/{session_id}` | Revoke one of the account's sessions |
 | `GET` | `/documents/` | List the current user's documents |
@@ -243,5 +280,5 @@ Mindbase is evolving into a multi-tenant commercial application. Each account ow
 - Use `.env.example` as a template with placeholder values only.
 - Document endpoints require a bearer access token. Passwords are hashed with Argon2id; JWT access tokens expire after 30 minutes.
 - Every document query and retrieval path is scoped by the authenticated owner. Identical content can exist in separate accounts without cross-account deduplication.
-- Session refresh, token rotation/replay detection, logout, and per-session revocation are implemented. Before public commercial deployment, still add email verification, password reset, abuse/rate limiting, audit logging, and production secret management.
+- Session refresh, token rotation/replay detection, logout, per-session revocation, email verification, password reset, account data export, and confirmed account deletion are implemented. Before public commercial deployment, still add production secret management, monitoring/alerting, and operational retention policies for security logs.
 - Docker Compose binds the API and database ports to loopback and requires an explicit `POSTGRES_PASSWORD`; do not replace this with a default or weak password.

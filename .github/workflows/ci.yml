@@ -31,6 +31,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Validate Docker Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-postgres-password
+          AUTH_SECRET_KEY: ci-auth-secret-key-with-more-than-32-characters
+        run: |
+          docker compose config --quiet
+          python - <<'PY'
+          import json
+          import subprocess
+
+          config = json.loads(
+              subprocess.check_output(
+                  ["docker", "compose", "config", "--format", "json"],
+                  text=True,
+              )
+          )
+          api_environment = config["services"]["api"]["environment"]
+          required = {
+              "AI_ASK_IP_LIMIT",
+              "AI_ASK_IDENTITY_LIMIT",
+              "AI_ASK_WINDOW_SECONDS",
+              "AI_SEARCH_IP_LIMIT",
+              "AI_SEARCH_IDENTITY_LIMIT",
+              "AI_SEARCH_WINDOW_SECONDS",
+          }
+          missing = sorted(required - api_environment.keys())
+          if missing:
+              raise SystemExit(
+                  "Docker Compose does not pass AI rate-limit settings to the API: "
+                  + ", ".join(missing)
+              )
+          PY
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

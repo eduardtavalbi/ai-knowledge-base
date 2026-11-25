@@ -1,7 +1,7 @@
 import asyncio
 from difflib import SequenceMatcher
 import re
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
@@ -244,24 +244,31 @@ async def search_document_chunks(
     for search_query, query_embedding in zip(queries, query_embeddings, strict=True):
         distance = DocumentChunk.embedding.cosine_distance(
             query_embedding
-        ).label("distance")
+        ).label("raw_score")
 
-        semantic_statement = (
-            select(Document, DocumentChunk, distance)
-            .join(
-                DocumentChunk,
-                DocumentChunk.document_id == Document.id,
+        # Keep each retriever's ORDER BY + LIMIT inside its own subquery.
+        # PostgreSQL can therefore use the cosine HNSW index for the semantic
+        # candidate scan before the two candidate sets are combined.
+        semantic_candidates = (
+            select(
+                DocumentChunk.id.label("chunk_id"),
+                distance.label("raw_score"),
+                literal("semantic").label("retriever"),
+                distance.label("sort_score"),
             )
             .where(
-                Document.user_id == user_id,
                 DocumentChunk.embedding.is_not(None),
-                distance <= 0.55,
+                select(Document.id)
+                .where(
+                    Document.id == DocumentChunk.document_id,
+                    Document.user_id == user_id,
+                )
+                .exists(),
             )
             .order_by(distance)
             .limit(candidate_limit)
+            .subquery()
         )
-        semantic_result = await db.execute(semantic_statement)
-        add_ranked_results(semantic_result.all(), semantic=True)
 
         search_text = func.concat_ws(
             " ",
@@ -272,20 +279,75 @@ async def search_document_chunks(
             search_text,
             search_query,
         )
-        text_rank = func.ts_rank(search_vector, search_tsquery).label("rank")
-
-        text_statement = (
-            select(Document, DocumentChunk, text_rank)
+        text_rank = func.ts_rank(search_vector, search_tsquery)
+        text_candidates = (
+            select(
+                DocumentChunk.id.label("chunk_id"),
+                text_rank.label("raw_score"),
+                literal("text").label("retriever"),
+                (-text_rank).label("sort_score"),
+            )
             .join(
-                DocumentChunk,
+                Document,
                 DocumentChunk.document_id == Document.id,
             )
-            .where(Document.user_id == user_id, search_vector.op("@@")(search_tsquery))
+            .where(
+                Document.user_id == user_id,
+                search_vector.op("@@")(search_tsquery),
+            )
             .order_by(text_rank.desc())
             .limit(candidate_limit)
+            .subquery()
         )
-        text_result = await db.execute(text_statement)
-        add_ranked_results(text_result.all())
+
+        candidates = union_all(
+            select(
+                semantic_candidates.c.chunk_id,
+                semantic_candidates.c.raw_score,
+                semantic_candidates.c.retriever,
+                semantic_candidates.c.sort_score,
+            ),
+            select(
+                text_candidates.c.chunk_id,
+                text_candidates.c.raw_score,
+                text_candidates.c.retriever,
+                text_candidates.c.sort_score,
+            ),
+        ).subquery()
+
+        statement = (
+            select(
+                Document,
+                DocumentChunk,
+                candidates.c.raw_score,
+                candidates.c.retriever,
+            )
+            .join(
+                DocumentChunk,
+                DocumentChunk.id == candidates.c.chunk_id,
+            )
+            .join(
+                Document,
+                Document.id == DocumentChunk.document_id,
+            )
+            # Repeat tenant filtering outside the candidate subqueries as a
+            # defense-in-depth invariant; both retrievers also filter inside.
+            .where(Document.user_id == user_id)
+            .order_by(candidates.c.retriever, candidates.c.sort_score)
+        )
+        result_rows = (await db.execute(statement)).all()
+        semantic_rows = [
+            (document, chunk, raw_score)
+            for document, chunk, raw_score, retriever in result_rows
+            if retriever == "semantic"
+        ]
+        text_rows = [
+            (document, chunk, raw_score)
+            for document, chunk, raw_score, retriever in result_rows
+            if retriever == "text"
+        ]
+        add_ranked_results(semantic_rows, semantic=True)
+        add_ranked_results(text_rows)
 
     if not scores:
         return []

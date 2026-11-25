@@ -29,10 +29,51 @@ services:
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?Set AUTH_SECRET_KEY in .env}
       REFRESH_TOKEN_COOKIE_SECURE: ${REFRESH_TOKEN_COOKIE_SECURE:-false}
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      FRONTEND_PUBLIC_URL: ${FRONTEND_PUBLIC_URL:-http://localhost:5173}
+      EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-false}
+      AUTH_LOGIN_IP_LIMIT: ${AUTH_LOGIN_IP_LIMIT:-20}
+      AUTH_LOGIN_IDENTITY_LIMIT: ${AUTH_LOGIN_IDENTITY_LIMIT:-8}
+      AUTH_LOGIN_WINDOW_SECONDS: ${AUTH_LOGIN_WINDOW_SECONDS:-900}
+      AUTH_RECOVERY_IP_LIMIT: ${AUTH_RECOVERY_IP_LIMIT:-20}
+      AUTH_RECOVERY_IDENTITY_LIMIT: ${AUTH_RECOVERY_IDENTITY_LIMIT:-4}
+      AUTH_RECOVERY_WINDOW_SECONDS: ${AUTH_RECOVERY_WINDOW_SECONDS:-3600}
+      AUTH_REGISTRATION_IP_LIMIT: ${AUTH_REGISTRATION_IP_LIMIT:-10}
+      AUTH_REGISTRATION_WINDOW_SECONDS: ${AUTH_REGISTRATION_WINDOW_SECONDS:-3600}
+      AI_ASK_IP_LIMIT: ${AI_ASK_IP_LIMIT:-60}
+      AI_ASK_IDENTITY_LIMIT: ${AI_ASK_IDENTITY_LIMIT:-20}
+      AI_ASK_WINDOW_SECONDS: ${AI_ASK_WINDOW_SECONDS:-60}
+      AI_SEARCH_IP_LIMIT: ${AI_SEARCH_IP_LIMIT:-120}
+      AI_SEARCH_IDENTITY_LIMIT: ${AI_SEARCH_IDENTITY_LIMIT:-60}
+      AI_SEARCH_WINDOW_SECONDS: ${AI_SEARCH_WINDOW_SECONDS:-60}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      MIGRATION_OWNER_EMAIL: ${MIGRATION_OWNER_EMAIL:-}
+      MIGRATION_OWNER_PASSWORD: ${MIGRATION_OWNER_PASSWORD:-}
+    command: >-
+      sh -c "python -m alembic upgrade head &&
+      exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       db:
         condition: service_healthy
