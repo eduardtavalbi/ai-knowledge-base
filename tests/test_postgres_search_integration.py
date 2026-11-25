@@ -202,8 +202,13 @@ async def test_postgres_semantic_candidate_query_can_use_hnsw_index(
             FROM document_chunks AS chunk
             JOIN documents AS document
               ON document.id = chunk.document_id
-            WHERE document.user_id = :user_id
-              AND chunk.embedding IS NOT NULL
+            WHERE chunk.embedding IS NOT NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM documents AS document
+                  WHERE document.id = chunk.document_id
+                    AND document.user_id = :user_id
+              )
               AND chunk.embedding <=> CAST(:query_vector AS vector) <= 0.55
             ORDER BY chunk.embedding <=> CAST(:query_vector AS vector)
             LIMIT 50
