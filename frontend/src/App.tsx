@@ -20,6 +20,22 @@ import {
 import './App.css'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+// Capture one-time action tokens, then remove them from the address bar before
+// the app performs any network requests or loads user-triggered resources.
+const initialAuthParams = new URLSearchParams(window.location.search)
+const initialResetToken = initialAuthParams.get('reset') || ''
+const initialVerificationToken = initialAuthParams.get('verify')
+if (initialAuthParams.has('reset') || initialAuthParams.has('verify')) {
+  initialAuthParams.delete('reset')
+  initialAuthParams.delete('verify')
+  const remainingQuery = initialAuthParams.toString()
+  window.history.replaceState(
+    {},
+    '',
+    `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ''}${window.location.hash}`,
+  )
+}
+
 type DocumentItem = {
   id: number
   title: string
@@ -45,12 +61,12 @@ type AskResponse = {
 function App() {
   const [query, setQuery] = useState('')
   const [accessToken, setAccessToken] = useState<string | null>(null)
-  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset'>(() =>
-    new URLSearchParams(window.location.search).get('reset') ? 'reset' : 'login',
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset'>(
+    initialResetToken ? 'reset' : 'login',
   )
   const [authNotice, setAuthNotice] = useState('')
-  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get('reset') || '')
-  const verificationToken = useRef(new URLSearchParams(window.location.search).get('verify'))
+  const [resetToken, setResetToken] = useState(initialResetToken)
+  const verificationToken = useRef(initialVerificationToken)
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authError, setAuthError] = useState('')
