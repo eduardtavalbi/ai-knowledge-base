@@ -16,7 +16,6 @@ class UserSession(Base):
         index=True,
     )
     refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    previous_refresh_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -26,3 +25,28 @@ class UserSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", back_populates="sessions")
+    refresh_tokens = relationship(
+        "SessionRefreshToken",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+
+
+class SessionRefreshToken(Base):
+    __tablename__ = "session_refresh_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("user_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    session = relationship("UserSession", back_populates="refresh_tokens")
