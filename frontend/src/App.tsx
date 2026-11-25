@@ -14,6 +14,8 @@ import {
   X,
   LoaderCircle,
   Trash2,
+  Download,
+  AlertTriangle,
 } from 'lucide-react'
 import './App.css'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -66,6 +68,10 @@ function App() {
   const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
+  const [accountDeleteOpen, setAccountDeleteOpen] = useState(false)
+  const [accountDeletePassword, setAccountDeletePassword] = useState('')
+  const [accountDeleteConfirmation, setAccountDeleteConfirmation] = useState('')
+  const [accountDeleting, setAccountDeleting] = useState(false)
   const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -105,7 +111,7 @@ function App() {
 
 
   useEffect(() => {
-    if (!editingDocument && !selectedDocument) return
+    if (!editingDocument && !selectedDocument && !accountDeleteOpen) return
 
     const dialog = window.document.querySelector<HTMLElement>(
       '.modal-overlay [role="dialog"]',
@@ -167,7 +173,7 @@ function App() {
       window.document.removeEventListener('keydown', trapDialogFocus)
       if (previouslyFocused?.isConnected) previouslyFocused.focus()
     }
-  }, [editingDocument, selectedDocument])
+  }, [editingDocument, selectedDocument, accountDeleteOpen])
 
   const closeSelectedDocument = useCallback(() => {
     selectedDocumentRequestId.current += 1
@@ -179,12 +185,14 @@ function App() {
 
 
   useEffect(() => {
-    if (!editingDocument && !selectedDocument) return
+    if (!editingDocument && !selectedDocument && !accountDeleteOpen) return
 
     function handleModalKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
 
-      if (editingDocument) {
+      if (accountDeleteOpen) {
+        if (!accountDeleting) setAccountDeleteOpen(false)
+      } else if (editingDocument) {
         if (!savingEdit) setEditingDocument(null)
       } else {
         closeSelectedDocument()
@@ -193,7 +201,7 @@ function App() {
 
     window.addEventListener('keydown', handleModalKeyDown)
     return () => window.removeEventListener('keydown', handleModalKeyDown)
-  }, [editingDocument, selectedDocument, savingEdit, closeSelectedDocument])
+  }, [editingDocument, selectedDocument, savingEdit, closeSelectedDocument, accountDeleteOpen, accountDeleting])
 
   async function openDocument(document: DocumentItem) {
     const requestId = ++selectedDocumentRequestId.current
@@ -469,6 +477,55 @@ function App() {
     setHasSearched(false)
     setMessage('')
     setApiStatus('checking')
+  }
+
+  async function downloadAccountExport() {
+    try {
+      const response = await requestApi(`${API_URL}/auth/me/export`)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = window.document.createElement('a')
+      link.href = url
+      link.download = 'mindbase-account-export.json'
+      window.document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      setMessage('Экспорт данных подготовлен и скачан.')
+    } catch (error) {
+      setMessage(error instanceof Error ? `Не удалось экспортировать данные: ${error.message}` : 'Не удалось экспортировать данные.')
+    }
+  }
+
+  async function deleteAccount() {
+    if (accountDeleteConfirmation !== 'DELETE') {
+      setMessage('Для удаления введи DELETE без кавычек.')
+      return
+    }
+    setAccountDeleting(true)
+    try {
+      const response = await requestApi(`${API_URL}/auth/me`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          current_password: accountDeletePassword,
+          confirmation: accountDeleteConfirmation,
+        }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => null)
+        throw new Error(data?.detail || `HTTP ${response.status}`)
+      }
+      setAccountDeleteOpen(false)
+      setAccountDeletePassword('')
+      setAccountDeleteConfirmation('')
+      logout(false)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось удалить аккаунт.')
+    } finally {
+      setAccountDeleting(false)
+    }
   }
 
   async function searchDocuments(event: React.FormEvent<HTMLFormElement>) {
@@ -882,7 +939,15 @@ function App() {
           <div className="breadcrumb">
             Workspace <ChevronRight size={15} /> <span>{activePage === 'search' ? 'Поиск' : 'Моя база знаний'}</span>
           </div>
-          <button className="logout-button" type="button" onClick={() => logout()}>Выйти</button>
+          <div className="topbar-actions">
+            <button className="account-export-button" type="button" onClick={() => void downloadAccountExport()}>
+              <Download size={15} /> Экспорт данных
+            </button>
+            <button className="account-delete-button" type="button" onClick={() => { setAccountDeleteOpen(true); setMessage('') }}>
+              Удалить аккаунт
+            </button>
+            <button className="logout-button" type="button" onClick={() => logout()}>Выйти</button>
+          </div>
         </header>
 
         <section className="content-wrap">
@@ -1151,6 +1216,78 @@ function App() {
           </footer>
         </section>
       </main>
+      {accountDeleteOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => { if (!accountDeleting) setAccountDeleteOpen(false) }}
+        >
+          <section
+            className="document-modal account-delete-modal"
+            role="dialog"
+            tabIndex={-1}
+            aria-modal="true"
+            aria-labelledby="account-delete-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              type="button"
+              onClick={() => setAccountDeleteOpen(false)}
+              disabled={accountDeleting}
+              aria-label="Закрыть"
+            >
+              <X size={20} />
+            </button>
+            <div className="account-delete-heading">
+              <AlertTriangle size={22} />
+              <h2 id="account-delete-title">Удаление аккаунта</h2>
+            </div>
+            <p className="account-delete-warning">
+              Это действие необратимо. Аккаунт, документы, фрагменты базы знаний,
+              сессии и ссылки восстановления будут удалены.
+            </p>
+            <form
+              className="account-delete-form"
+              onSubmit={(event) => { event.preventDefault(); void deleteAccount() }}
+            >
+              <label htmlFor="account-delete-password">Текущий пароль</label>
+              <input
+                id="account-delete-password"
+                type="password"
+                autoComplete="current-password"
+                value={accountDeletePassword}
+                onChange={(event) => setAccountDeletePassword(event.target.value)}
+                required
+              />
+              <label htmlFor="account-delete-confirmation">Введи DELETE для подтверждения</label>
+              <input
+                id="account-delete-confirmation"
+                value={accountDeleteConfirmation}
+                onChange={(event) => setAccountDeleteConfirmation(event.target.value)}
+                autoComplete="off"
+                required
+              />
+              <div className="edit-actions">
+                <button
+                  type="button"
+                  className="edit-cancel"
+                  onClick={() => setAccountDeleteOpen(false)}
+                  disabled={accountDeleting}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  className="account-delete-confirm"
+                  disabled={accountDeleting || !accountDeletePassword || accountDeleteConfirmation !== 'DELETE'}
+                >
+                  {accountDeleting ? 'Удаление…' : 'Удалить аккаунт навсегда'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
       {editingDocument && (
         <div
           className="modal-overlay"

@@ -1118,3 +1118,133 @@ button:disabled {
   opacity: 0.55;
   cursor: wait;
 }
+
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.account-export-button,
+.account-delete-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border: 1px solid #343648;
+  border-radius: 8px;
+  background: #171923;
+  color: #b8b5c9;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.account-export-button:hover {
+  border-color: #7770e8;
+  color: #e4dfff;
+}
+
+.account-delete-button {
+  border-color: #633b43;
+  color: #e7a0a0;
+}
+
+.account-delete-button:hover,
+.account-delete-confirm:hover {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: #b45a66;
+}
+
+.account-delete-modal {
+  width: min(100%, 500px);
+}
+
+.account-delete-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #f08c8c;
+}
+
+.account-delete-heading h2 {
+  margin: 0;
+}
+
+.account-delete-warning {
+  margin: 18px 0 22px;
+  color: #b8a5a8;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.account-delete-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.account-delete-form label {
+  margin-top: 8px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.account-delete-form input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #3d3540;
+  border-radius: 9px;
+  background: #11121a;
+  color: #f1f5f9;
+  font: inherit;
+}
+
+.account-delete-confirm {
+  padding: 10px 14px;
+  border: 1px solid #75414a;
+  border-radius: 9px;
+  background: #42242b;
+  color: #ffc0c0;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.account-delete-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+  .topbar-actions {
+    gap: 5px;
+  }
+
+  .account-export-button,
+  .account-delete-button,
+  .logout-button {
+    padding: 8px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar-actions {
+    gap: 4px;
+  }
+
+  .account-export-button {
+    font-size: 0;
+  }
+
+  .account-export-button svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .account-delete-button {
+    max-width: 88px;
+    line-height: 1.2;
+  }
+}
