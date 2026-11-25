@@ -279,7 +279,7 @@ async def refresh_session(
         if _now() - _aware(token_record.used_at) <= timedelta(
             seconds=REFRESH_TOKEN_REUSE_GRACE_SECONDS
         ):
-            raise HTTPException(status_code=409, detail="Refresh token was already rotated")
+            raise HTTPException(\n                status_code=409,\n                detail="Refresh token was already rotated",\n                headers={"Retry-After": "0.1"},\n            )
         session.revoked_at = _now()
         await db.commit()
         _clear_refresh_cookie(response)
