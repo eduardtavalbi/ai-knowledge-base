@@ -280,7 +280,7 @@ async def test_search_rejects_incomplete_batched_embeddings_before_database_quer
             await search_document_chunks("original query", db, limit=5)
 
     embedding.assert_called_once_with(
-        ["original query", "first alternative"]
+        ["original query", "first alternative", "second alternative"]
     )
     db.execute.assert_not_awaited()
 
