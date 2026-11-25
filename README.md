@@ -136,6 +136,9 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=YOUR_PASSWORD
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 GEMINI_MODEL=gemini-3.8-flash
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
 ```
 
 Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys. For local HTTP development, keep `REFRESH_TOKEN_COOKIE_SECURE=false`; set it to `true` behind HTTPS in production. Set `FRONTEND_ORIGINS` to the exact comma-separated origins serving the browser app (without trailing slashes). To require verified email addresses, set `EMAIL_VERIFICATION_REQUIRED=true` and configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`, and any required SMTP credentials; set `FRONTEND_PUBLIC_URL` to the public frontend URL.
@@ -151,6 +154,14 @@ docker compose up -d db
 ```
 
 The database is exposed on `127.0.0.1:5434` only. The API is also bound to `127.0.0.1:8000`; neither service is exposed to other machines on the network. Docker Compose creates the persistent volume `ai_knowledge_base_vector_data` automatically on first startup.
+
+To run the API in Docker as well (instead of starting it with the local Python command below), run:
+
+```powershell
+docker compose up -d --build api
+```
+
+The API container applies pending Alembic migrations before starting Uvicorn and exposes `/health` as a container health check. If you are upgrading a database that already contains documents, put `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` in `.env` before starting it. Do not start the containerized API and the local Uvicorn server at the same time because both use port `8000`.
 
 ### 4. Set up the Python environment
 
