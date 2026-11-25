@@ -262,3 +262,71 @@ async def test_delayed_rate_limit_request_cannot_move_bucket_to_an_older_window(
     )
     assert bucket.request_count == 3
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_retry_after_uses_active_window_for_delayed_request(monkeypatch):
+    from app.services import security
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    moments = iter(
+        [
+            datetime(2026, 1, 1, 12, 0, 59, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 1, 1, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 0, 59, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 1, 2, tzinfo=timezone.utc),
+        ]
+    )
+
+    class ControlledDateTime:
+        @classmethod
+        def now(cls, tz=None):
+            return next(moments)
+
+        @staticmethod
+        def fromtimestamp(value, tz=None):
+            return datetime.fromtimestamp(value, tz)
+
+    monkeypatch.setattr(security, "datetime", ControlledDateTime)
+    request = SimpleNamespace(client=SimpleNamespace(host="192.0.2.56"))
+
+    async with session_factory() as db:
+        for _ in range(3):
+            await security.enforce_rate_limit(
+                db,
+                request,
+                "delayed_retry_after",
+                ip_limit=2,
+                window_seconds=60,
+            )
+
+        with pytest.raises(HTTPException) as error:
+            await security.enforce_rate_limit(
+                db,
+                request,
+                "delayed_retry_after",
+                ip_limit=2,
+                window_seconds=60,
+            )
+
+        bucket = await db.get(
+            RateLimitBucket,
+            security.hash_security_identifier(
+                "delayed_retry_after:ip:192.0.2.56"
+            ),
+        )
+
+    assert error.value.status_code == 429
+    assert error.value.headers["Retry-After"] == "59"
+    assert bucket is not None
+    assert bucket.window_started_at.replace(tzinfo=timezone.utc) == datetime(
+        2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc
+    )
+    assert bucket.request_count == 3
+    await engine.dispose()
+
