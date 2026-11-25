@@ -327,6 +327,7 @@ async def upload_document(
         ip_limit=settings.document_upload_ip_limit,
         identity=str(user.id),
         identity_limit=settings.document_upload_identity_limit,
+        identity_is_global=True,
         window_seconds=settings.document_upload_window_seconds,
     )
     if not file.filename:
