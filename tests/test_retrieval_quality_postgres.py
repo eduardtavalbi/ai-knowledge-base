@@ -39,7 +39,14 @@ async def postgres_session():
     )
     try:
         async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
+            # checkfirst=False is required: public tables are visible through the
+            # search_path, but this fixture must create its own schema tables.
+            await connection.run_sync(
+                lambda sync_connection: Base.metadata.create_all(
+                    sync_connection,
+                    checkfirst=False,
+                )
+            )
 
         session_factory = async_sessionmaker(engine, expire_on_commit=False)
         async with session_factory() as session:
