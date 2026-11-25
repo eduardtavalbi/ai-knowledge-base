@@ -10,6 +10,19 @@ from app.models.document_chunk import DocumentChunk
 from conftest import TestingSessionLocal
 from app.api.documents import upload_document
 
+
+@pytest.fixture(autouse=True)
+def mock_embedding_runtime(monkeypatch):
+    """Keep API behavior tests independent from the heavyweight ML runtime."""
+    monkeypatch.setattr(
+        "app.api.documents.generate_embedding",
+        lambda _text: [0.0] * 384,
+    )
+    monkeypatch.setattr(
+        "app.services.chunk_storage.generate_embeddings",
+        lambda texts: [[0.0] * 384 for _ in texts],
+    )
+
 @pytest.mark.asyncio
 async def test_create_document(client):
     response = await client.post(
