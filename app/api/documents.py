@@ -316,9 +316,9 @@ async def update_document(
 async def upload_document(
     response: Response,
     file: UploadFile = File(...),
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    http_request: Request = None,
 ):
     await enforce_rate_limit(
         db,
