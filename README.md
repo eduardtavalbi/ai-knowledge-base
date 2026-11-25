@@ -8,7 +8,7 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 
 - **Document management** — create, view, update, and delete documents.
 - **File uploads** — import `.txt`, `.md`, `.pdf`, and `.docx` files with a 2 MB size limit; retain PDF page numbers and document section headings for source citations.
-- **Hybrid retrieval** — combines semantic vector search and PostgreSQL full-text search over document chunks using Reciprocal Rank Fusion (RRF). Semantic retrieval is backed by a pgvector HNSW cosine index for scalable nearest-neighbor lookup.
+- **Hybrid retrieval** — combines semantic vector search and PostgreSQL full-text search over document chunks using Reciprocal Rank Fusion (RRF). Full-text retrieval combines PostgreSQL Russian and English dictionaries so both languages benefit from stemming; semantic retrieval is backed by a pgvector HNSW cosine index for scalable nearest-neighbor lookup.
 - **Multi-query retrieval** — Gemini generates alternative query formulations; retrieval safely falls back to the original query if expansion is unavailable. Results from all formulations are fused with RRF.
 - **RAG-based question answering** — retrieves relevant document chunks and passes them as context to Google Gemini.
 - **Source references** — returns the document chunks used to generate an answer, including PDF page numbers and DOCX/Markdown section headings when available.
