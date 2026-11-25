@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import StaticPool
 
 from app.main import app
+from app.api.auth import get_current_user
+from app.models.user import User
 from app.db.base import Base
 from app.db.session import get_db
 
@@ -37,6 +39,19 @@ async def client():
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+    async with TestingSessionLocal() as session:
+        test_user = User(
+            id=1,
+            email="test@example.com",
+            hashed_password="not-used-by-tests",
+        )
+        session.add(test_user)
+        await session.commit()
+
+    async def override_current_user():
+        return test_user
+
+    app.dependency_overrides[get_current_user] = override_current_user
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -53,3 +68,24 @@ async def client():
 @pytest.fixture
 def test_marker():
     return "test"
+
+
+@pytest_asyncio.fixture
+async def unauthenticated_client():
+    async with test_engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    async def override_get_db():
+        async with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as test_client:
+        yield test_client
+
+    app.dependency_overrides.clear()
+    async with test_engine.begin() as connection:
+        await connection.run_sync(Base.metadata.drop_all)
