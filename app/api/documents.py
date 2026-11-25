@@ -144,8 +144,8 @@ async def get_documents(
 
 @router.get("/search", response_model=list[SearchResultResponse])
 async def search_documents_endpoint(
+    http_request: Request,
     q: str = Query(..., min_length=1, max_length=2000),
-    http_request: Request = None,
     db: AsyncSession = Depends(get_db),
     limit: int = 5,
     user: User = Depends(get_current_user),
@@ -391,8 +391,8 @@ async def create_document(
 
 @router.get("/search/chunks", response_model=list[ChunkSearchResult])
 async def search_document_chunks_endpoint(
+    http_request: Request,
     q: str = Query(..., min_length=1, max_length=2000),
-    http_request: Request = None,
     db: AsyncSession = Depends(get_db),
     limit: int = 5,
     user: User = Depends(get_current_user),
