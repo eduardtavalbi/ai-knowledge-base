@@ -42,6 +42,12 @@ type AskResponse = {
 
 function App() {
   const [query, setQuery] = useState('')
+  const [accessToken, setAccessToken] = useState<string | null>(null)
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
   const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(true)
   const [results, setResults] = useState<DocumentItem[]>([])
@@ -194,7 +200,9 @@ function App() {
   ): Promise<Response> {
     const requestId = ++apiRequestId.current
     try {
-      const response = await fetch(input, init)
+      const headers = new Headers(init?.headers)
+      if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+      const response = await fetch(input, { ...init, headers })
       // An HTTP error still proves that the API is reachable; only a failed
       // network request should switch the connection indicator to offline.
       if (requestId === apiRequestId.current) setApiStatus('online')
@@ -235,11 +243,74 @@ function App() {
   }
 
   useEffect(() => {
+    if (!accessToken) return
     const timeoutId = window.setTimeout(() => {
       void loadDocuments()
     }, 0)
     return () => window.clearTimeout(timeoutId)
-  }, [])
+  }, [accessToken])
+
+  async function submitAuth(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setAuthLoading(true)
+    setAuthError('')
+    try {
+      if (authMode === 'register') {
+        const registration = await fetch(`${API_URL}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: authEmail, password: authPassword }),
+        })
+        if (!registration.ok) {
+          const data = await registration.json().catch(() => null)
+          throw new Error(data?.detail || 'Не удалось создать аккаунт.')
+        }
+      }
+
+      const body = new URLSearchParams({
+        username: authEmail,
+        password: authPassword,
+      })
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => null)
+        throw new Error(data?.detail || 'Неверный email или пароль.')
+      }
+      const data: { access_token: string } = await response.json()
+      setAccessToken(data.access_token)
+      setAuthPassword('')
+      setApiStatus('online')
+    } catch (error) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось выполнить вход. Проверь подключение к серверу.',
+      )
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  function logout() {
+    searchRequestId.current += 1
+    documentsRequestId.current += 1
+    selectedDocumentRequestId.current += 1
+    setAccessToken(null)
+    setDocuments([])
+    setResults([])
+    setAiAnswer('')
+    setAnswerSources([])
+    setSelectedDocument(null)
+    setEditingDocument(null)
+    setHasSearched(false)
+    setMessage('')
+    setApiStatus('checking')
+  }
+
   async function searchDocuments(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -496,6 +567,68 @@ function App() {
       setSavingEdit(false)
     }
   }
+  if (!accessToken) {
+    return (
+      <main className="auth-screen">
+        <section className="auth-card">
+          <div className="auth-brand">
+            <span className="brand-icon"><BrainCircuit size={25} /></span>
+            <span>Mindbase<span className="brand-dot">.</span></span>
+          </div>
+          <p className="auth-eyebrow">PERSONAL KNOWLEDGE WORKSPACE</p>
+          <h1>{authMode === 'login' ? 'С возвращением' : 'Создать аккаунт'}</h1>
+          <p className="auth-description">
+            {authMode === 'login'
+              ? 'Войдите, чтобы открыть свою приватную базу знаний.'
+              : 'Создайте аккаунт и начните собирать собственную базу знаний.'}
+          </p>
+          <form className="auth-form" onSubmit={submitAuth}>
+            <label htmlFor="auth-email">Email</label>
+            <input
+              id="auth-email"
+              type="email"
+              autoComplete="email"
+              value={authEmail}
+              onChange={(event) => setAuthEmail(event.target.value)}
+              required
+            />
+            <label htmlFor="auth-password">Пароль</label>
+            <input
+              id="auth-password"
+              type="password"
+              autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+              minLength={12}
+              value={authPassword}
+              onChange={(event) => setAuthPassword(event.target.value)}
+              required
+            />
+            {authError && <p className="auth-error" role="alert">{authError}</p>}
+            <button className="auth-submit" type="submit" disabled={authLoading}>
+              {authLoading
+                ? 'Подождите…'
+                : authMode === 'login' ? 'Войти' : 'Создать аккаунт'}
+            </button>
+          </form>
+          <button
+            className="auth-switch"
+            type="button"
+            onClick={() => {
+              setAuthMode((mode) => mode === 'login' ? 'register' : 'login')
+              setAuthError('')
+            }}
+          >
+            {authMode === 'login'
+              ? 'Нет аккаунта? Зарегистрироваться'
+              : 'Уже есть аккаунт? Войти'}
+          </button>
+          {authMode === 'register' && (
+            <p className="auth-password-hint">Пароль должен содержать не менее 12 символов.</p>
+          )}
+        </section>
+      </main>
+    )
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -544,7 +677,7 @@ function App() {
           <div className="breadcrumb">
             Workspace <ChevronRight size={15} /> <span>{activePage === 'search' ? 'Поиск' : 'Моя база знаний'}</span>
           </div>
-          <div className="avatar">Э</div>
+          <button className="logout-button" type="button" onClick={logout}>Выйти</button>
         </header>
 
         <section className="content-wrap">
