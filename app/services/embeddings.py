@@ -1,15 +1,24 @@
-from functools import lru_cache
+from threading import Lock
 
 
 MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
+_model = None
+_model_lock = Lock()
 
-@lru_cache(maxsize=1)
+
 def _get_model():
-    """Load the embedding model only when an embedding is actually requested."""
-    from sentence_transformers import SentenceTransformer
+    """Load the embedding model once, on the first embedding request."""
+    global _model
 
-    return SentenceTransformer(MODEL_NAME)
+    if _model is None:
+        with _model_lock:
+            if _model is None:
+                from sentence_transformers import SentenceTransformer
+
+                _model = SentenceTransformer(MODEL_NAME)
+
+    return _model
 
 
 def generate_embedding(text: str) -> list[float]:
