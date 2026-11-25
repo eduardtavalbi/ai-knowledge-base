@@ -66,6 +66,23 @@ function App() {
     void loadDocuments()
   }, [])
 
+  useEffect(() => {
+    if (!editingDocument && !selectedDocument) return
+
+    function handleModalKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+
+      if (editingDocument) {
+        if (!savingEdit) setEditingDocument(null)
+      } else {
+        setSelectedDocument(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleModalKeyDown)
+    return () => window.removeEventListener('keydown', handleModalKeyDown)
+  }, [editingDocument, selectedDocument, savingEdit])
+
   async function loadDocuments() {
     setDocumentsLoading(true)
     try {
