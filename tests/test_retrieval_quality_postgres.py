@@ -1,4 +1,5 @@
 import os
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -21,20 +22,36 @@ pytestmark = pytest.mark.skipif(
 
 @pytest_asyncio.fixture
 async def postgres_session():
-    engine = create_async_engine(DATABASE_URL)
-    async with engine.begin() as connection:
+    schema = f"retrieval_{uuid.uuid4().hex}"
+    admin_engine = create_async_engine(DATABASE_URL)
+
+    async with admin_engine.begin() as connection:
         await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await connection.run_sync(Base.metadata.drop_all)
-        await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
 
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with session_factory() as session:
-        yield session
-        await session.rollback()
+    engine = create_async_engine(
+        DATABASE_URL,
+        connect_args={
+            "server_settings": {
+                "search_path": f"{schema},public",
+            }
+        },
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
 
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with session_factory() as session:
+            yield session
+            await session.rollback()
+    finally:
+        await engine.dispose()
+        async with admin_engine.begin() as connection:
+            await connection.execute(
+                text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+            )
+        await admin_engine.dispose()
 
 
 def embedding(first: float, second: float = 0.0) -> list[float]:
