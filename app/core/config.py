@@ -52,9 +52,11 @@ class Settings(BaseSettings):
     def _is_secure_origin(value: str) -> bool:
         try:
             parsed = urlsplit(value)
+            port = parsed.port
             return (
                 parsed.scheme == "https"
                 and bool(parsed.hostname)
+                and (port is None or 1 <= port <= 65535)
                 and parsed.username is None
                 and parsed.password is None
                 and parsed.path in {"", "/"}
@@ -98,6 +100,8 @@ class Settings(BaseSettings):
                 raise ValueError("DATABASE_URL must use PostgreSQL with a host, database, username, and non-placeholder password in production")
             if not (self.smtp_host and self.smtp_from_email):
                 raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required for production account email delivery")
+            if not (self.smtp_starttls or self.smtp_use_ssl):
+                raise ValueError("Production SMTP must use STARTTLS or implicit TLS")
             if self.smtp_username and not self.smtp_password:
                 raise ValueError("SMTP_PASSWORD is required when SMTP_USERNAME is configured")
         return self
