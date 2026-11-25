@@ -26,6 +26,7 @@ from app.models.security_audit_event import SecurityAuditEvent
 from app.services.email import send_account_email
 from app.services.security import (
     enforce_rate_limit,
+    hash_security_identifier,
     record_security_event,
 )
 
@@ -839,6 +840,14 @@ async def delete_account(
         await db.execute(
             delete(SecurityAuditEvent).where(
                 SecurityAuditEvent.user_id == locked_user.id
+            )
+        )
+        # Also remove legacy pseudonymous events written before known-account
+        # recovery requests were linked to user_id.
+        await db.execute(
+            delete(SecurityAuditEvent).where(
+                SecurityAuditEvent.email_hash
+                == hash_security_identifier(locked_user.email.casefold())
             )
         )
         await db.delete(locked_user)
