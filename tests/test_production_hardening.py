@@ -114,3 +114,21 @@ async def test_readiness_endpoint_reports_database_ready(client):
     response = await client.get("/ready")
     assert response.status_code == 200
     assert response.json() == {"status": "ready"}
+
+
+@pytest.mark.asyncio
+async def test_readiness_endpoint_returns_503_when_database_is_unavailable(client):
+    from app.db.session import get_db
+    from app.main import app
+
+    class UnavailableDatabase:
+        async def execute(self, statement):
+            raise RuntimeError("database connection failed")
+
+    async def override_unavailable_db():
+        yield UnavailableDatabase()
+
+    app.dependency_overrides[get_db] = override_unavailable_db
+    response = await client.get("/ready")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Database is unavailable"}
