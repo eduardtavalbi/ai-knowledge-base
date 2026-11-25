@@ -1,7 +1,7 @@
 from io import BytesIO
 
 import pytest
-from fastapi import Response, UploadFile
+from fastapi import HTTPException, Response, UploadFile
 from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
 
@@ -138,16 +138,13 @@ async def test_delete_document(client):
 async def test_upload_rejects_missing_filename_with_clear_error():
     upload = UploadFile(filename=None, file=BytesIO(b"Document content"))
 
-    with pytest.raises(Exception) as error:
+    with pytest.raises(HTTPException) as error:
         await upload_document(
             response=Response(),
             file=upload,
             db=None,
         )
 
-    from fastapi import HTTPException
-
-    assert isinstance(error.value, HTTPException)
     assert error.value.status_code == 400
     assert error.value.detail == "Filename is required"
 
