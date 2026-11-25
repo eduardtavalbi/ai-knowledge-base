@@ -126,7 +126,7 @@ function App() {
 
       // Keep keyboard focus inside the modal even if another script or
       // browser interaction moved it outside the dialog.
-      if (!dialog.contains(activeElement)) {
+      if (!dialog!.contains(activeElement)) {
         event.preventDefault()
         ;(event.shiftKey ? last : first).focus()
         return
