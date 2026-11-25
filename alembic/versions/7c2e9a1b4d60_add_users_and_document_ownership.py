@@ -14,7 +14,7 @@ from app.core.config import settings
 
 
 revision: str = "7c2e9a1b4d60"
-down_revision: Union[str, Sequence[str], None] = "4f8b2a1c9d30"
+down_revision: Union[str, Sequence[str], None] = "e2f6c1a8b904"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
