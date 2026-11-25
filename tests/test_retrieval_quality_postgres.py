@@ -146,7 +146,7 @@ async def test_postgres_search_removes_duplicates_and_limits_chunks_per_document
         ),
         patch(
             "app.services.search.generate_embeddings",
-            return_value=embedding(1.0),
+            return_value=[embedding(1.0)],
         ),
     ):
         results = await search_document_chunks(
@@ -256,7 +256,7 @@ async def test_postgres_search_keeps_conflicting_policy_sources(postgres_session
         ),
         patch(
             "app.services.search.generate_embeddings",
-            return_value=embedding(1.0),
+            return_value=[embedding(1.0)],
         ),
     ):
         results = await search_document_chunks(
@@ -326,7 +326,7 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
         ),
         patch(
             "app.services.search.generate_embeddings",
-            return_value=embedding(1.0),
+            return_value=[embedding(1.0)],
         ),
     ):
         results = await search_document_chunks(
@@ -380,7 +380,7 @@ async def test_postgres_search_keeps_identical_chunks_from_separate_documents(
         ),
         patch(
             "app.services.search.generate_embeddings",
-            return_value=embedding(1.0),
+            return_value=[embedding(1.0)],
         ),
     ):
         results = await search_document_chunks(
