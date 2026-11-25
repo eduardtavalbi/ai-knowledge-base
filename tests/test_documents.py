@@ -626,3 +626,43 @@ async def test_delete_document_also_deletes_its_chunks(client):
         )).scalars().all()
 
     assert remaining == []
+
+
+@pytest.mark.asyncio
+async def test_create_document_rejects_content_over_2mb_utf8(client):
+    oversized_content = "я" * (1024 * 1024 + 1)
+
+    response = await client.post(
+        "/documents/",
+        json={
+            "title": "Слишком большой документ",
+            "content": oversized_content,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Document content must not exceed 2 MB" in response.text
+
+
+@pytest.mark.asyncio
+async def test_update_document_rejects_content_over_2mb_utf8(client):
+    created = await client.post(
+        "/documents/",
+        json={
+            "title": "Документ для обновления",
+            "content": "Исходное содержимое.",
+        },
+    )
+    document_id = created.json()["id"]
+    oversized_content = "я" * (1024 * 1024 + 1)
+
+    response = await client.put(
+        f"/documents/{document_id}",
+        json={
+            "title": "Обновлённый документ",
+            "content": oversized_content,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Document content must not exceed 2 MB" in response.text
