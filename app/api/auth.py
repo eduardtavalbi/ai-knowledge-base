@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
-from app.models.user_session import UserSession
+from app.models.user_session import UserSession, SessionRefreshToken
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -185,12 +185,15 @@ async def register(
 
 async def _create_session(user: User, db: AsyncSession) -> tuple[UserSession, str]:
     refresh_token = _new_refresh_token()
+    token_hash = _hash_refresh_token(refresh_token)
     session = UserSession(
         user_id=user.id,
-        refresh_token_hash=_hash_refresh_token(refresh_token),
+        refresh_token_hash=token_hash,
         expires_at=_now() + timedelta(days=REFRESH_TOKEN_DAYS),
     )
     db.add(session)
+    await db.flush()
+    db.add(SessionRefreshToken(session_id=session.id, token_hash=token_hash))
     await db.commit()
     await db.refresh(session)
     return session, refresh_token
@@ -232,20 +235,27 @@ async def refresh_session(
         raise HTTPException(status_code=401, detail="Refresh token is missing")
 
     token_hash = _hash_refresh_token(refresh_token)
-    result = await db.execute(
-        select(UserSession)
-        .where(
-            (UserSession.refresh_token_hash == token_hash)
-            | (UserSession.previous_refresh_token_hash == token_hash)
-        )
+    token_result = await db.execute(
+        select(SessionRefreshToken)
+        .where(SessionRefreshToken.token_hash == token_hash)
         .with_for_update()
     )
-    session = result.scalar_one_or_none()
+    token_record = token_result.scalar_one_or_none()
+    if token_record is None:
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    session_result = await db.execute(
+        select(UserSession)
+        .where(UserSession.id == token_record.session_id)
+        .with_for_update()
+    )
+    session = session_result.scalar_one_or_none()
     if session is None or session.revoked_at is not None:
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    if session.previous_refresh_token_hash == token_hash:
+    if token_record.used_at is not None:
         session.revoked_at = _now()
         await db.commit()
         _clear_refresh_cookie(response)
@@ -265,8 +275,10 @@ async def refresh_session(
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     replacement = _new_refresh_token()
-    session.previous_refresh_token_hash = session.refresh_token_hash
-    session.refresh_token_hash = _hash_refresh_token(replacement)
+    replacement_hash = _hash_refresh_token(replacement)
+    token_record.used_at = _now()
+    session.refresh_token_hash = replacement_hash
+    db.add(SessionRefreshToken(session_id=session.id, token_hash=replacement_hash))
     await db.commit()
     _set_refresh_cookie(response, replacement)
     return _token_response(user.id, session.id)
@@ -290,7 +302,8 @@ async def logout(
         session.revoked_at = _now()
         await db.commit()
     _clear_refresh_cookie(response)
-    return Response(status_code=204)
+    response.status_code = 204
+    return response
 
 
 @router.get("/sessions", response_model=list[SessionResponse])
@@ -329,7 +342,8 @@ async def revoke_session(
     if session.revoked_at is None:
         session.revoked_at = _now()
         await db.commit()
-    return Response(status_code=204)
+    response.status_code = 204
+    return response
 
 
 @router.get("/me", response_model=UserResponse)
