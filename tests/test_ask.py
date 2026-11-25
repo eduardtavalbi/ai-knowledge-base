@@ -1,4 +1,5 @@
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -44,7 +45,7 @@ async def test_ask_returns_429_when_gemini_quota_exhausted(ask_request):
         ),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            await ask_question(ask_request, db=AsyncMock())
+            await ask_question(ask_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert exc_info.value.status_code == 429
     assert exc_info.value.detail == "AI service rate limit reached. Please try again later."
