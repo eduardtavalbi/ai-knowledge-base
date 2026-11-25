@@ -540,7 +540,7 @@ async def test_update_replaces_old_chunks_and_clears_source_metadata(client):
             files={
                 "file": (
                     "policy.md",
-                    b"# Old section\\n\\nOld searchable policy content.",
+                    b"# Old section\n\nOld searchable policy content.",
                     "text/markdown",
                 )
             },
