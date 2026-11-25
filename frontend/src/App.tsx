@@ -194,18 +194,32 @@ function App() {
     }
   }
 
-  const refreshAccessToken = useCallback(async (): Promise<string | null> => {
-    try {
-      const response = await fetch(`${API_URL}/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-      })
-      if (!response.ok) return null
-      const data: { access_token: string } = await response.json()
-      return data.access_token
-    } catch {
-      return null
-    }
+  const refreshPromise = useRef<Promise<string | null> | null>(null)
+
+  const refreshAccessToken = useCallback((): Promise<string | null> => {
+    // React StrictMode and parallel 401 responses can trigger refresh together.
+    // Share one request so the same single-use refresh token is never raced.
+    if (refreshPromise.current) return refreshPromise.current
+
+    const pending = (async (): Promise<string | null> => {
+      try {
+        const response = await fetch(`${API_URL}/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+        })
+        if (!response.ok) return null
+        const data: { access_token: string } = await response.json()
+        return data.access_token
+      } catch {
+        return null
+      }
+    })()
+
+    refreshPromise.current = pending
+    void pending.finally(() => {
+      if (refreshPromise.current === pending) refreshPromise.current = null
+    })
+    return pending
   }, [])
 
   useEffect(() => {
@@ -234,6 +248,7 @@ function App() {
       if (response.status === 401 && accessToken) {
         const renewedToken = await refreshAccessToken()
         if (renewedToken) {
+          setAccessToken(renewedToken)
           response = await send(renewedToken)
         } else {
           logout(false)
