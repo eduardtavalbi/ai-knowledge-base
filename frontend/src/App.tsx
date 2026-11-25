@@ -650,7 +650,9 @@ function App() {
       {editingDocument && (
         <div
           className="modal-overlay"
-          onClick={() => setEditingDocument(null)}
+          onClick={() => {
+            if (!savingEdit) setEditingDocument(null)
+          }}
         >
           <section
             className="document-modal edit-modal"
@@ -662,6 +664,7 @@ function App() {
             <button
               className="modal-close"
               onClick={() => setEditingDocument(null)}
+              disabled={savingEdit}
               aria-label="Закрыть редактор"
             >
               <X size={20} />
@@ -698,6 +701,7 @@ function App() {
                   type="button"
                   className="edit-cancel"
                   onClick={() => setEditingDocument(null)}
+                  disabled={savingEdit}
                 >
                   Отмена
                 </button>
