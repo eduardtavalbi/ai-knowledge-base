@@ -194,22 +194,50 @@ function App() {
     }
   }
 
+  async function refreshAccessToken(): Promise<string | null> {
+    try {
+      const response = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (!response.ok) return null
+      const data: { access_token: string } = await response.json()
+      setAccessToken(data.access_token)
+      return data.access_token
+    } catch {
+      return null
+    }
+  }
+
+  useEffect(() => {
+    let active = true
+    void refreshAccessToken().then((token) => {
+      if (active && token) setApiStatus('online')
+    })
+    return () => { active = false }
+  }, [])
+
   async function requestApi(
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> {
     const requestId = ++apiRequestId.current
     try {
-      const headers = new Headers(init?.headers)
-      if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
-      const response = await fetch(input, { ...init, headers })
-      // An expired/revoked access token ends the local session.
-      if (response.status === 401 && accessToken) {
-        logout()
-        return response
+      const send = (token: string | null) => {
+        const headers = new Headers(init?.headers)
+        if (token) headers.set('Authorization', `Bearer ${token}`)
+        return fetch(input, { ...init, headers, credentials: 'include' })
       }
-      // An HTTP error still proves that the API is reachable; only a failed
-      // network request should switch the connection indicator to offline.
+      let response = await send(accessToken)
+      if (response.status === 401 && accessToken) {
+        const renewedToken = await refreshAccessToken()
+        if (renewedToken) {
+          response = await send(renewedToken)
+        } else {
+          logout(false)
+          return response
+        }
+      }
       if (requestId === apiRequestId.current) setApiStatus('online')
       return response
     } catch (error) {
@@ -280,6 +308,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body,
+        credentials: 'include',
       })
       if (!response.ok) {
         const data = await response.json().catch(() => null)
@@ -300,7 +329,14 @@ function App() {
     }
   }
 
-  function logout() {
+  function logout(revokeServerSession = true) {
+    if (revokeServerSession && accessToken) {
+      void fetch(`${API_URL}/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: 'include',
+      }).catch(() => undefined)
+    }
     searchRequestId.current += 1
     documentsRequestId.current += 1
     selectedDocumentRequestId.current += 1
