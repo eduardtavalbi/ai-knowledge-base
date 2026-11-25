@@ -128,6 +128,7 @@ async def test_search_documents_returns_empty_list():
         documents = await search_documents(
             query="Unknown topic",
             db=db,
+            user_id=1,
         )
 
     assert documents == []
@@ -181,6 +182,7 @@ async def test_search_documents_returns_full_text_matches_without_semantic_searc
         documents = await search_documents(
             query="автоматическое тестирование",
             db=db,
+            user_id=1,
             limit=5,
         )
 
@@ -220,6 +222,7 @@ async def test_search_documents_runs_embedding_in_worker_thread():
         documents = await search_documents(
             query="Python",
             db=db,
+            user_id=1,
         )
 
     assert documents == []
