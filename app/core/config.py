@@ -1,6 +1,7 @@
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
@@ -64,6 +65,9 @@ class Settings(BaseSettings):
                 raise ValueError("FRONTEND_ORIGINS must contain only HTTPS origins in production")
             if not self.frontend_public_url.startswith("https://"):
                 raise ValueError("FRONTEND_PUBLIC_URL must use HTTPS in production")
+            database_url = make_url(self.database_url)
+            if not database_url.drivername.startswith("postgresql") or not database_url.password or "CHANGE_ME" in database_url.password:
+                raise ValueError("DATABASE_URL must use PostgreSQL with a non-placeholder password in production")
             if self.email_verification_required and not (self.smtp_host and self.smtp_from_email):
                 raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required when email verification is enabled in production")
         return self
