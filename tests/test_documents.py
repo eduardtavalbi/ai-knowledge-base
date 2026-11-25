@@ -822,3 +822,46 @@ async def test_update_rolls_back_when_document_embedding_fails(client):
     assert document is not None
     assert document.title == "Original embedding failure document"
     assert document.content == "Original content must stay committed."
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_whitespace_only_content(client):
+    response = await client.post(
+        "/documents/",
+        json={"title": "Blank document", "content": "  \n\t  "},
+    )
+
+    assert response.status_code == 422
+    assert "Document content cannot be empty" in str(response.json())
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_normalize_document_titles(client):
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch("app.api.documents.save_document_chunks", new_callable=AsyncMock),
+    ):
+        created = await client.post(
+            "/documents/",
+            json={"title": "  Original title  ", "content": "Useful content"},
+        )
+        assert created.status_code == 201
+        assert created.json()["title"] == "Original title"
+
+        updated = await client.put(
+            f"/documents/{created.json()['id']}",
+            json={"title": "  Updated title  ", "content": "Updated content"},
+        )
+
+    assert updated.status_code == 200
+    assert updated.json()["title"] == "Updated title"
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_whitespace_only_title(client):
+    response = await client.post(
+        "/documents/",
+        json={"title": "   ", "content": "Useful content"},
+    )
+
+    assert response.status_code == 422
