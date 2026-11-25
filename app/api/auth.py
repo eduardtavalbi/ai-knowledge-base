@@ -23,6 +23,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 password_hasher = PasswordHash.recommended()
 ACCESS_TOKEN_MINUTES = 30
 REFRESH_TOKEN_DAYS = 30
+REFRESH_TOKEN_REUSE_GRACE_SECONDS = 10
 REFRESH_COOKIE_NAME = "mindbase_refresh"
 
 
@@ -272,6 +273,13 @@ async def refresh_session(
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     if token_record.used_at is not None:
+        # Another browser tab may have refreshed with the same cookie at nearly
+        # the same time. Give it a short retry window before treating reuse as
+        # a compromised token family.
+        if _now() - _aware(token_record.used_at) <= timedelta(
+            seconds=REFRESH_TOKEN_REUSE_GRACE_SECONDS
+        ):
+            raise HTTPException(status_code=409, detail="Refresh token was already rotated")
         session.revoked_at = _now()
         await db.commit()
         _clear_refresh_cookie(response)
