@@ -666,3 +666,108 @@ async def test_update_document_rejects_content_over_2mb_utf8(client):
 
     assert response.status_code == 422
     assert "Document content must not exceed 2 MB" in response.text
+
+
+
+@pytest.mark.asyncio
+async def test_create_document_rolls_back_when_chunk_embedding_fails():
+    from sqlalchemy import select
+
+    from app.api.documents import _create_document_if_new
+    from app.models.document import Document
+
+    async with TestingSessionLocal() as db:
+        with (
+            patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+            patch(
+                "app.api.documents.save_document_chunks",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("embedding service failed"),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="embedding service failed"):
+                await _create_document_if_new(
+                    title="Atomic upload",
+                    content="This document must not be partially saved.",
+                    db=db,
+                )
+
+    async with TestingSessionLocal() as db:
+        documents = (
+            await db.execute(
+                select(Document).where(Document.title == "Atomic upload")
+            )
+        ).scalars().all()
+
+    assert documents == []
+
+
+@pytest.mark.asyncio
+async def test_update_rolls_back_document_and_old_chunks_when_embedding_fails(client):
+    from sqlalchemy import select
+
+    from app.api.documents import update_document
+    from app.models.document import Document
+    from app.schemas.document import DocumentUpdate
+
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch(
+            "app.services.chunk_storage.generate_embeddings",
+            return_value=[[0.0] * 384],
+        ),
+    ):
+        created = await client.post(
+            "/documents/",
+            json={
+                "title": "Original atomic document",
+                "content": "Original content that must remain searchable.",
+            },
+        )
+
+    assert created.status_code == 201
+    document_id = created.json()["id"]
+
+    async with TestingSessionLocal() as db:
+        original_chunks = (
+            await db.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.document_id == document_id
+                )
+            )
+        ).scalars().all()
+        original_chunk_ids = {chunk.id for chunk in original_chunks}
+        assert original_chunk_ids
+
+    async with TestingSessionLocal() as db:
+        with (
+            patch("app.api.documents.generate_embedding", return_value=[0.1] * 384),
+            patch(
+                "app.services.chunk_storage.generate_embeddings",
+                side_effect=RuntimeError("embedding service failed"),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="embedding service failed"):
+                await update_document(
+                    document_id=document_id,
+                    document_data=DocumentUpdate(
+                        title="Partially updated document",
+                        content="Replacement content that must be rolled back.",
+                    ),
+                    db=db,
+                )
+
+    async with TestingSessionLocal() as db:
+        document = await db.get(Document, document_id)
+        remaining_chunks = (
+            await db.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.document_id == document_id
+                )
+            )
+        ).scalars().all()
+
+    assert document is not None
+    assert document.title == "Original atomic document"
+    assert document.content == "Original content that must remain searchable."
+    assert {chunk.id for chunk in remaining_chunks} == original_chunk_ids
