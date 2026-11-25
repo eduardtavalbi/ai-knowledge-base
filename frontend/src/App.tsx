@@ -116,7 +116,7 @@ function App() {
       const elements = getFocusableElements()
       if (elements.length === 0) {
         event.preventDefault()
-        dialog.focus()
+        dialog!.focus()
         return
       }
 
@@ -136,7 +136,7 @@ function App() {
       window.document.removeEventListener('keydown', trapDialogFocus)
       if (previouslyFocused?.isConnected) previouslyFocused.focus()
     }
-  }, [Boolean(editingDocument), Boolean(selectedDocument)])
+  }, [editingDocument, selectedDocument])
 
   async function requestApi(
     input: RequestInfo | URL,
