@@ -454,6 +454,9 @@ async def test_password_reset_is_one_time_and_revokes_existing_sessions(unauthen
         json={"token": token, "new_password": "new-password-456"},
     )
     assert reset.status_code == 204
+    assert reset.headers["cache-control"] == "no-store"
+    assert "mindbase_refresh=" in reset.headers["set-cookie"]
+    assert "max-age=0" in reset.headers["set-cookie"].lower()
 
     old_session = await unauthenticated_client.get(
         "/auth/me",
