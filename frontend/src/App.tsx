@@ -207,7 +207,7 @@ function App() {
     } catch {
       return null
     }
-  }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -215,7 +215,7 @@ function App() {
       if (active && token) setApiStatus('online')
     })
     return () => { active = false }
-  }, [])
+  }, [refreshAccessToken])
 
   async function requestApi(
     input: RequestInfo | URL,
