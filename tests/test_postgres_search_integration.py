@@ -39,7 +39,12 @@ async def postgres_session():
     )
     try:
         async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(
+                lambda sync_connection: Base.metadata.create_all(
+                    sync_connection,
+                    checkfirst=False,
+                )
+            )
 
         session_factory = async_sessionmaker(
             engine,
