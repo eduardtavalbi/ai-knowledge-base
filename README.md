@@ -113,6 +113,7 @@ Configure the following variables in `.env`:
 ```dotenv
 APP_NAME=AI Knowledge Base API
 DEBUG=false
+AUTH_SECRET_KEY=GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
 DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5434/knowledge_base
 POSTGRES_DB=knowledge_base
 POSTGRES_USER=postgres
@@ -121,7 +122,9 @@ GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 GEMINI_MODEL=gemini-3.8-flash
 ```
 
-Use your own credentials. Set a non-default database password in `POSTGRES_PASSWORD`. Never commit `.env` or API keys.
+Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys.
+
+If you are upgrading a database that already contains documents, set `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` before applying the ownership migration. The migration assigns all existing documents to this account; choose credentials you control. These variables are only needed for a database with existing documents.
 
 ### 3. Start the database
 
@@ -184,7 +187,10 @@ python -m pytest -v
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/documents/` | List documents |
+| `POST` | `/auth/register` | Register an account |
+| `POST` | `/auth/login` | Obtain a bearer access token |
+| `GET` | `/auth/me` | Get the authenticated account |
+| `GET` | `/documents/` | List the current user's documents |
 | `POST` | `/documents/` | Create a document |
 | `GET` | `/documents/{id}` | Retrieve a document |
 | `PUT` | `/documents/{id}` | Update a document |
@@ -218,12 +224,14 @@ ai-knowledge-base/
 
 ## Project Status
 
-Mindbase is an ongoing personal project focused on backend development, semantic retrieval, and AI-powered knowledge management.
+Mindbase is evolving into a multi-tenant commercial application. Each account owns a private document collection; document CRUD, deduplication, hybrid retrieval, and RAG context are scoped to the authenticated user.
 
 ## Security Notes
 
 - Keep API keys and credentials in local environment files.
 - Do not commit `.env`, database backups, or other sensitive files.
 - Use `.env.example` as a template with placeholder values only.
-- The API currently has no authentication or user isolation. Keep it on a trusted local machine; do not expose it to the public internet or an untrusted network without adding authentication, authorization, and deployment-level protections.
+- Document endpoints require a bearer access token. Passwords are hashed with Argon2id; JWT access tokens expire after 30 minutes.
+- Every document query and retrieval path is scoped by the authenticated owner. Identical content can exist in separate accounts without cross-account deduplication.
+- This is an initial authentication milestone, not yet a production launch approval: add email verification, abuse/rate limiting, password reset, refresh-token/session revocation, audit logging, and production secret management before public commercial deployment.
 - Docker Compose binds the API and database ports to loopback and requires an explicit `POSTGRES_PASSWORD`; do not replace this with a default or weak password.
