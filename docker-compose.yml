@@ -24,6 +24,8 @@
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-knowledge_base}
+      APP_NAME: ${APP_NAME:-AI Knowledge Base API}
+      DEBUG: ${DEBUG:-false}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
     ports:
@@ -34,5 +36,4 @@
 
 volumes:
   postgres_data:
-    external: true
     name: ai_knowledge_base_vector_data
