@@ -211,7 +211,10 @@ function App() {
   useEffect(() => {
     let active = true
     void refreshAccessToken().then((token) => {
-      if (active && token) {\n        setAccessToken(token)\n        setApiStatus('online')\n      }
+      if (active && token) {
+        setAccessToken(token)
+        setApiStatus('online')
+      }
     })
     return () => { active = false }
   }, [refreshAccessToken])
