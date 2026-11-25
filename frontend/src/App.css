@@ -422,6 +422,27 @@ button:disabled {
   background: #171923;
 }
 
+
+.result-open-button {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 15px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.result-open-button:focus-visible {
+  outline: 2px solid #8b83ff;
+  outline-offset: 5px;
+}
+
 .document-icon,
 .upload-icon {
   width: 41px;
@@ -660,7 +681,6 @@ button:disabled {
 }
 
 .result-card {
-  cursor: pointer;
   transition: border-color 0.2s, transform 0.2s;
 }
 
