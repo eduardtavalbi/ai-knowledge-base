@@ -277,7 +277,7 @@ Mindbase is evolving into a multi-tenant commercial application. Each account ow
 
 ## Production Operations
 
-Set `ENVIRONMENT=production` to enable strict startup validation. Production requires `DEBUG=false`, a unique random `AUTH_SECRET_KEY` of at least 32 characters, `REFRESH_TOKEN_COOKIE_SECURE=true`, HTTPS-only `FRONTEND_ORIGINS` and `FRONTEND_PUBLIC_URL`, and SMTP host/from-address values when email verification is required. `SMTP_STARTTLS` and `SMTP_USE_SSL` are mutually exclusive. Keep secrets in your deployment platform's secret manager; inject them as environment variables and never bake them into images or commit them to the repository.
+Set `ENVIRONMENT=production` to enable strict startup validation. Production requires `DEBUG=false`, a unique random `AUTH_SECRET_KEY` of at least 32 characters, `REFRESH_TOKEN_COOKIE_SECURE=true`, HTTPS-only `FRONTEND_ORIGINS` and `FRONTEND_PUBLIC_URL`, and SMTP host/from-address values for account email delivery. `SMTP_STARTTLS` and `SMTP_USE_SSL` are mutually exclusive. Keep secrets in your deployment platform's secret manager; inject them as environment variables and never bake them into images or commit them to the repository.
 
 `/health` reports process liveness. `/ready` executes a lightweight database query and returns HTTP 503 when PostgreSQL is unavailable. Configure your platform to monitor both endpoints and alert on repeated readiness failures, elevated HTTP 5xx/429 rates, API restarts, database storage pressure, and backup failures. Send application logs to a centralized log service and avoid logging request bodies, passwords, cookies, access tokens, or recovery tokens.
 
