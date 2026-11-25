@@ -29,6 +29,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("event_type", sa.String(length=64), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=True),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.Column("email_hash", sa.String(length=64), nullable=True),
         sa.Column("ip_hash", sa.String(length=64), nullable=True),
         sa.Column("user_agent_hash", sa.String(length=64), nullable=True),
