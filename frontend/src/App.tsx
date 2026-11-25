@@ -186,10 +186,10 @@ function App() {
     }
   }
 
-  const requestApi = useCallback(async (
+  async function requestApi(
     input: RequestInfo | URL,
     init?: RequestInit,
-  ): Promise<Response> => {
+  ): Promise<Response> {
     try {
       const response = await fetch(input, init)
       // An HTTP error still proves that the API is reachable; only a failed
@@ -200,9 +200,9 @@ function App() {
       setApiStatus('offline')
       throw error
     }
-  }, [])
+  }
 
-  const loadDocuments = useCallback(async () => {
+  async function loadDocuments() {
     setDocumentsLoading(true)
     try {
       const response = await requestApi(`${API_URL}/documents/`)
@@ -224,11 +224,14 @@ function App() {
     } finally {
       setDocumentsLoading(false)
     }
-  }, [requestApi])
+  }
 
   useEffect(() => {
-    void Promise.resolve().then(loadDocuments)
-  }, [loadDocuments])
+    const timeoutId = window.setTimeout(() => {
+      void loadDocuments()
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [])
   async function searchDocuments(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
