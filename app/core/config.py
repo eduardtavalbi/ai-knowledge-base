@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "AI Knowledge Base API"
-    debug: bool = True
+    debug: bool = False
     database_url: str = (
         "postgresql+asyncpg://postgres:postgres@localhost:5434/knowledge_base"
     )
