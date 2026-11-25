@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.search import (
+    _multilingual_fts_expressions,
     _negation_signature,
     _prepare_search_queries,
     search_document_chunks,
@@ -370,4 +371,27 @@ async def test_search_preserves_identical_chunks_from_different_documents():
 
     assert [chunk["document_id"] for chunk in chunks] == [1, 2]
     assert [chunk["chunk_id"] for chunk in chunks] == [1, 2]
+
+def test_multilingual_fts_uses_russian_and_english_dictionaries():
+    from sqlalchemy import literal
+    from sqlalchemy.dialects import postgresql
+
+    vector, query = _multilingual_fts_expressions(
+        literal("VPN политика access policy"),
+        "доступ access",
+    )
+
+    compiled_vector = str(
+        vector.compile(dialect=postgresql.dialect())
+    )
+    compiled_query = str(
+        query.compile(dialect=postgresql.dialect())
+    )
+
+    assert "russian" in compiled_vector
+    assert "english" in compiled_vector
+    assert "russian" in compiled_query
+    assert "english" in compiled_query
+    assert "to_tsvector" in compiled_vector
+    assert "plainto_tsquery" in compiled_query
 
