@@ -39,7 +39,7 @@ async def enforce_rate_limit(
     client_ip = request.client.host if request.client else "unknown"
     dimensions = [("ip", client_ip, ip_limit)]
     if identity is not None and identity_limit is not None:
-        dimensions.append(("identity", identity.casefold(), identity_limit))
+        dimensions.append(("identity_ip", f"{identity.casefold()}:{client_ip}", identity_limit))
 
     dialect = db.get_bind().dialect.name
     insert_statement = pg_insert if dialect == "postgresql" else sqlite_insert
