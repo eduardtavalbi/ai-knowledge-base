@@ -113,8 +113,11 @@ function App() {
       setApiStatus('online')
     } catch (error) {
       console.error('Ошибка загрузки документов:', error)
-      setApiStatus('offline')
-      setMessage('Не удалось загрузить список документов. Проверь подключение к API.')
+      setMessage(
+        error instanceof Error && error.message.startsWith('HTTP ')
+          ? 'API доступен, но не удалось загрузить список документов.'
+          : 'Не удалось загрузить список документов. Проверь подключение к API.',
+      )
     } finally {
       setDocumentsLoading(false)
     }
