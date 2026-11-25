@@ -1,8 +1,11 @@
 import jwt
 import pytest
+from sqlalchemy import select
 
 from app.api import auth as auth_module
 from app.core.config import settings
+from app.models.security_audit_event import SecurityAuditEvent
+from conftest import TestingSessionLocal
 
 
 @pytest.mark.asyncio
@@ -525,3 +528,39 @@ async def test_login_rate_limit_blocks_repeated_password_guesses(unauthenticated
     assert blocked.status_code == 429
     assert int(blocked.headers["retry-after"]) > 0
     assert blocked.json()["detail"] == "Too many requests. Please try again later."
+
+
+@pytest.mark.asyncio
+async def test_authentication_events_are_audited_without_raw_identifiers(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "auth_secret_key",
+        "test-only-secret-key-that-is-long-enough-for-hmac",
+    )
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "audit@example.com", "password": "a-long-test-password"},
+    )
+    await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "audit@example.com", "password": "incorrect-password"},
+    )
+    successful_login = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "audit@example.com", "password": "a-long-test-password"},
+    )
+    assert successful_login.status_code == 200
+
+    async with TestingSessionLocal() as session:
+        result = await session.execute(
+            select(SecurityAuditEvent).order_by(SecurityAuditEvent.id)
+        )
+        events = result.scalars().all()
+
+    event_types = [event.event_type for event in events]
+    assert "account_registered" in event_types
+    assert "login_failed" in event_types
+    assert "login_succeeded" in event_types
+    assert all(event.email_hash != "audit@example.com" for event in events if event.email_hash)
+    assert all(len(event.email_hash) == 64 for event in events if event.email_hash)
+    assert all(len(event.ip_hash) == 64 for event in events if event.ip_hash)
