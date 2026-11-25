@@ -675,6 +675,8 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
         data={"username": "delete-me@example.com", "password": "a-long-test-password"},
     )
     token = login.json()["access_token"]
+    refresh_token = unauthenticated_client.cookies.get("mindbase_refresh")
+    assert refresh_token
     async with TestingSessionLocal() as session:
         user = (await session.execute(
             select(User).where(User.email == "delete-me@example.com")
@@ -713,6 +715,11 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
         headers={"Authorization": f"Bearer {token}"},
     )
     assert profile.status_code == 401
+    refresh_again = await unauthenticated_client.post(
+        "/auth/refresh",
+        headers={"Cookie": f"mindbase_refresh={refresh_token}"},
+    )
+    assert refresh_again.status_code == 401
     login_again = await unauthenticated_client.post(
         "/auth/login",
         data={"username": "delete-me@example.com", "password": "a-long-test-password"},
