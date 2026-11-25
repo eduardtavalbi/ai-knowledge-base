@@ -63,15 +63,19 @@ async def enforce_rate_limit(
             request_count=1,
         )
         same_window = RateLimitBucket.window_started_at == window_start
+        newer_window_exists = RateLimitBucket.window_started_at > window_start
         statement = statement.on_conflict_do_update(
             index_elements=[RateLimitBucket.key_hash],
             set_={
+                # A delayed request from an older window must never move the
+                # bucket backwards after a newer window has already started.
                 "window_started_at": case(
-                    (same_window, RateLimitBucket.window_started_at),
+                    (newer_window_exists, RateLimitBucket.window_started_at),
                     else_=window_start,
                 ),
                 "request_count": case(
                     (same_window, RateLimitBucket.request_count + 1),
+                    (newer_window_exists, RateLimitBucket.request_count),
                     else_=1,
                 ),
             },
