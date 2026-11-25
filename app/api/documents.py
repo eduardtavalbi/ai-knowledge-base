@@ -56,23 +56,26 @@ router = APIRouter(
 async def _find_document_by_hash(
     db: AsyncSession,
     content_sha256: str,
-    content: str | None = None,
     user_id: int,
+    content: str | None = None,
     exclude_id: int | None = None,
 ) -> Document | None:
-    conditions = [Document.user_id == user_id, Document.content_sha256 == content_sha256]
+    content_conditions = [Document.content_sha256 == content_sha256]
     if content is not None:
         # Older databases may contain duplicate documents from before
         # fingerprinting. The migration preserves those records with NULL
         # fingerprints, so compare their content as a compatibility fallback.
-        conditions.append(
+        content_conditions.append(
             and_(
                 Document.content_sha256.is_(None),
                 Document.content == content,
             )
         )
 
-    statement = select(Document).where(or_(*conditions))
+    statement = select(Document).where(
+        Document.user_id == user_id,
+        or_(*content_conditions),
+    )
     if exclude_id is not None:
         statement = statement.where(Document.id != exclude_id)
     statement = statement.order_by(Document.id).limit(1)
@@ -85,8 +88,8 @@ async def _create_document_if_new(
     title: str,
     content: str,
     db: AsyncSession,
-    source_segments: Sequence[SourceSegment] | None = None,
     user_id: int,
+    source_segments: Sequence[SourceSegment] | None = None,
 ) -> tuple[Document, bool]:
     content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -187,7 +190,8 @@ async def get_documents(
 @router.delete("/{document_id}")
 async def delete_documents(
     document_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(Document)
@@ -229,7 +233,7 @@ async def update_document(
     # Concurrent updates/deletes for this document then serialize in PostgreSQL.
     result = await db.execute(
         select(Document)
-        .where(Document.id == document_id)
+        .where(Document.id == document_id, Document.user_id == user.id)
         .with_for_update()
     )
     document = result.scalars().first()
