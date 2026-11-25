@@ -78,8 +78,8 @@ async def test_hybrid_search_returns_relevant_chunks():
     with (
         patch("app.services.llm.expand_search_queries", new_callable=AsyncMock,
               return_value=["Python framework"]),
-        patch("app.services.search.generate_embedding",
-              return_value=[0.1] * 384) as embedding,
+        patch("app.services.search.generate_embeddings",
+              return_value=[[0.1] * 384]) as embedding,
     ):
         chunks = await search_document_chunks("Python framework", db, limit=5)
 
@@ -90,7 +90,7 @@ async def test_hybrid_search_returns_relevant_chunks():
     assert chunks[0]["source_page"] == 4
     assert chunks[0]["source_section"] == "Backend"
     assert chunks[0]["score"] == 1.0
-    embedding.assert_called_once_with("Python framework")
+    embedding.assert_called_once_with(["Python framework"])
     assert db.execute.await_count == 2
 
 
@@ -110,8 +110,8 @@ async def test_rrf_combines_rankings_from_multiple_queries():
     with (
         patch("app.services.llm.expand_search_queries", new_callable=AsyncMock,
               return_value=["backend", "FastAPI async"]),
-        patch("app.services.search.generate_embedding",
-              return_value=[0.1] * 384),
+        patch("app.services.search.generate_embeddings",
+              return_value=[[0.1] * 384]),
     ):
         chunks = await search_document_chunks("backend", db, limit=5)
 
@@ -137,8 +137,8 @@ async def test_search_limits_chunks_per_document():
     with (
         patch("app.services.llm.expand_search_queries", new_callable=AsyncMock,
               return_value=["Python"]),
-        patch("app.services.search.generate_embedding",
-              return_value=[0.1] * 384),
+        patch("app.services.search.generate_embeddings",
+              return_value=[[0.1] * 384]),
     ):
         chunks = await search_document_chunks("Python", db, limit=5)
 
@@ -161,8 +161,8 @@ async def test_search_removes_near_duplicate_chunks():
     with (
         patch("app.services.llm.expand_search_queries", new_callable=AsyncMock,
               return_value=["Python"]),
-        patch("app.services.search.generate_embedding",
-              return_value=[0.1] * 384),
+        patch("app.services.search.generate_embeddings",
+              return_value=[[0.1] * 384]),
     ):
         chunks = await search_document_chunks("Python", db, limit=5)
 
@@ -182,8 +182,8 @@ async def test_search_filters_semantic_results_below_similarity_threshold():
     with (
         patch("app.services.llm.expand_search_queries", new_callable=AsyncMock,
               return_value=["Python"]),
-        patch("app.services.search.generate_embedding",
-              return_value=[0.1] * 384),
+        patch("app.services.search.generate_embeddings",
+              return_value=[[0.1] * 384]),
     ):
         chunks = await search_document_chunks("Python", db)
 
@@ -198,8 +198,8 @@ async def test_search_returns_empty_when_no_retrievers_match():
     with (
         patch("app.services.llm.expand_search_queries", new_callable=AsyncMock,
               return_value=["unknown topic"]),
-        patch("app.services.search.generate_embedding",
-              return_value=[0.1] * 384),
+        patch("app.services.search.generate_embeddings",
+              return_value=[[0.1] * 384]),
     ):
         chunks = await search_document_chunks("unknown topic", db)
 
@@ -243,15 +243,15 @@ async def test_search_uses_original_query_even_when_expansion_omits_it():
             return_value=["alternative wording"],
         ),
         patch(
-            "app.services.search.generate_embedding",
-            return_value=[0.1] * 384,
+            "app.services.search.generate_embeddings",
+            return_value=[[0.1] * 384],
         ) as embedding,
     ):
         chunks = await search_document_chunks("original question", db, limit=5)
 
-    assert [call.args[0] for call in embedding.call_args_list] == [
+    embedding.assert_called_once_with([
         "original question",
         "alternative wording",
-    ]
+    ])
     assert {chunk["chunk_id"] for chunk in chunks} == {1, 2}
     assert db.execute.await_count == 4
