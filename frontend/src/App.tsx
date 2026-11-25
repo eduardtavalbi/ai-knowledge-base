@@ -43,6 +43,7 @@ type AskResponse = {
 function App() {
   const [query, setQuery] = useState('')
   const [documents, setDocuments] = useState<DocumentItem[]>([])
+  const [documentsLoading, setDocumentsLoading] = useState(true)
   const [results, setResults] = useState<DocumentItem[]>([])
   const [hasSearched, setHasSearched] = useState(false)
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking')
@@ -65,6 +66,7 @@ function App() {
   }, [])
 
   async function loadDocuments() {
+    setDocumentsLoading(true)
     try {
       const response = await fetch(`${API_URL}/documents/`)
 
@@ -79,6 +81,8 @@ function App() {
       console.error('Ошибка загрузки документов:', error)
       setApiStatus('offline')
       setMessage('Не удалось загрузить список документов. Проверь подключение к API.')
+    } finally {
+      setDocumentsLoading(false)
     }
   }
 
@@ -450,9 +454,16 @@ function App() {
                   </article>
                 ))}
 
-                {documents.length === 0 && (
+                {documentsLoading && (
+                  <div className="empty-state" role="status">
+                    <LoaderCircle className="spin" size={18} /> Загрузка документов…
+                  </div>
+                )}
+                {!documentsLoading && documents.length === 0 && (
                   <div className="empty-state">
-                    Документы пока не загружены.
+                    {apiStatus === 'offline'
+                      ? 'Не удалось подключиться к серверу. Проверь API и повтори попытку.'
+                      : 'Документы пока не загружены.'}
                   </div>
                 )}
               </div>
