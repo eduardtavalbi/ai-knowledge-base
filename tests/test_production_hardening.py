@@ -19,6 +19,7 @@ def production_settings(**overrides):
         "refresh_token_cookie_secure": True,
         "frontend_origins": "https://app.example.com",
         "frontend_public_url": "https://app.example.com",
+        "database_url": "postgresql+asyncpg://mindbase:secure-db-password@db:5432/mindbase",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -37,6 +38,7 @@ def test_production_configuration_accepts_secure_values():
         {"refresh_token_cookie_secure": False},
         {"frontend_origins": "http://app.example.com"},
         {"frontend_public_url": "http://app.example.com"},
+        {"database_url": "postgresql+asyncpg://mindbase:CHANGE_ME@db:5432/mindbase"},
         {"email_verification_required": True},
     ],
 )
