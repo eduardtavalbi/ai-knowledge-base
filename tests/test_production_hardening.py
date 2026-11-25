@@ -42,6 +42,8 @@ def test_production_configuration_accepts_secure_values():
         {"frontend_origins": "https://app.example.com/path"},
         {"frontend_public_url": "https://"},
         {"frontend_public_url": "http://app.example.com"},
+        {"frontend_public_url": "https://app.example.com:invalid"},
+        {"frontend_origins": "https://app.example.com:99999"},
         {"database_url": "postgresql+asyncpg://mindbase:CHANGE_ME@db:5432/mindbase"},
         {"database_url": "postgresql+asyncpg:///mindbase"},
         {"smtp_host": ""},
@@ -68,6 +70,11 @@ def test_unknown_environment_is_rejected():
 def test_smtp_transport_modes_are_mutually_exclusive():
     with pytest.raises(ValidationError):
         Settings(_env_file=None, smtp_starttls=True, smtp_use_ssl=True)
+
+
+def test_production_smtp_requires_encryption():
+    with pytest.raises(ValidationError):
+        production_settings(smtp_starttls=False, smtp_use_ssl=False)
 
 
 @pytest.mark.asyncio
