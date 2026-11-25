@@ -6,7 +6,7 @@ from app.api.auth import get_current_user
 from app.models.user import User
 from app.services.embeddings import generate_embedding
 from app.services.search import search_documents
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Response
 
 
 
@@ -142,7 +142,7 @@ async def get_documents(
 
 @router.get("/search", response_model=list[SearchResultResponse])
 async def search_documents_endpoint(
-    q: str,
+    q: str = Query(..., min_length=1, max_length=2000),
     db: AsyncSession = Depends(get_db),
     limit: int = 5,
     user: User = Depends(get_current_user),
@@ -325,7 +325,9 @@ async def upload_document(
         )
 
     try:
-        extracted_document = extract_document(
+        # PDF/DOCX parsing is CPU-bound and must not block the async event loop.
+        extracted_document = await asyncio.to_thread(
+            extract_document,
             filename=file.filename,
             content=content_bytes,
         )
