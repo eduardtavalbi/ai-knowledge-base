@@ -552,7 +552,7 @@ async def test_upload_invalid_pdf_is_rejected(client):
 async def test_update_replaces_old_chunks_and_clears_source_metadata(client):
     with (
         patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
-        patch("app.services.chunk_storage.generate_embedding", return_value=[0.0] * 384),
+        patch("app.services.chunk_storage.generate_embeddings", return_value=[[0.0] * 384]),
     ):
         uploaded = await client.post(
             "/documents/upload",
@@ -599,7 +599,7 @@ async def test_update_replaces_old_chunks_and_clears_source_metadata(client):
 async def test_delete_document_also_deletes_its_chunks(client):
     with (
         patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
-        patch("app.services.chunk_storage.generate_embedding", return_value=[0.0] * 384),
+        patch("app.services.chunk_storage.generate_embeddings", return_value=[[0.0] * 384]),
     ):
         created = await client.post(
             "/documents/",
