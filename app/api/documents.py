@@ -315,8 +315,8 @@ async def update_document(
 @router.post("/upload", response_model=DocumentResponse, status_code=201)
 async def upload_document(
     response: Response,
-    file: UploadFile = File(...),
     http_request: Request,
+    file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
