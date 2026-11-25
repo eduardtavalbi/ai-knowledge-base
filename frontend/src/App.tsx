@@ -373,7 +373,7 @@ function App() {
       <main className="main-content">
         <header className="topbar">
           <div className="breadcrumb">
-            Workspace <ChevronRight size={15} /> <span>Поиск</span>
+            Workspace <ChevronRight size={15} /> <span>{activePage === 'search' ? 'Поиск' : 'Моя база знаний'}</span>
           </div>
           <div className="avatar">Э</div>
         </header>
