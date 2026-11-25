@@ -23,6 +23,18 @@ def _negation_signature(text: str) -> frozenset[str]:
     )
 
 
+def _multilingual_fts_expressions(text_expression, query: str):
+    """Build Russian + English PostgreSQL FTS expressions for mixed-language data."""
+    russian_vector = func.to_tsvector("russian", text_expression)
+    english_vector = func.to_tsvector("english", text_expression)
+    search_vector = russian_vector.op("||")(english_vector)
+
+    russian_query = func.plainto_tsquery("russian", query)
+    english_query = func.plainto_tsquery("english", query)
+    search_query = russian_query.op("||")(english_query)
+    return search_vector, search_query
+
+
 
 
 
@@ -76,16 +88,13 @@ async def search_documents(
         return documents
 
     # 2. Полнотекстовый поиск PostgreSQL с русской морфологией.
-    search_vector = func.to_tsvector(
-        "russian",
-        func.concat_ws(
-            " ",
-            Document.title,
-            Document.content,
-        ),
+    search_text = func.concat_ws(
+        " ",
+        Document.title,
+        Document.content,
     )
-    search_query = func.plainto_tsquery(
-        "russian",
+    search_vector, search_query = _multilingual_fts_expressions(
+        search_text,
         query,
     )
 
@@ -250,15 +259,15 @@ async def search_document_chunks(
         semantic_result = await db.execute(semantic_statement)
         add_ranked_results(semantic_result.all(), semantic=True)
 
-        search_vector = func.to_tsvector(
-            "simple",
-            func.concat_ws(
-                " ",
-                Document.title,
-                DocumentChunk.content,
-            ),
+        search_text = func.concat_ws(
+            " ",
+            Document.title,
+            DocumentChunk.content,
         )
-        search_tsquery = func.plainto_tsquery("simple", search_query)
+        search_vector, search_tsquery = _multilingual_fts_expressions(
+            search_text,
+            search_query,
+        )
         text_rank = func.ts_rank(search_vector, search_tsquery).label("rank")
 
         text_statement = (
