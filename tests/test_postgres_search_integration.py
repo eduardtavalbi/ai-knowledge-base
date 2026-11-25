@@ -1,3 +1,4 @@
+import math
 import os
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -192,6 +193,45 @@ async def test_postgres_hybrid_search_filters_weak_vector_matches(
 async def test_postgres_semantic_candidate_query_can_use_hnsw_index(
     postgres_session,
 ):
+    # Populate a realistic multi-tenant corpus before asking the planner to
+    # choose between the tenant index and the approximate vector index.
+    postgres_session.add(
+        User(id=2, email="other-search@example.com", hashed_password="unused")
+    )
+    await postgres_session.flush()
+
+    documents = []
+    chunks = []
+    for index in range(1000):
+        owner_id = 1 if index % 2 == 0 else 2
+        angle = (index % 360) * math.pi / 180
+        vector = [math.cos(angle), math.sin(angle)] + [0.0] * 382
+        document = Document(
+            user_id=owner_id,
+            title=f"Search fixture {index}",
+            content="HNSW query planner fixture",
+            content_sha256=f"{index + 1:064x}",
+        )
+        documents.append(document)
+        chunks.append((document, vector))
+
+    postgres_session.add_all(documents)
+    await postgres_session.flush()
+    postgres_session.add_all(
+        [
+            DocumentChunk(
+                document_id=document.id,
+                chunk_index=0,
+                content="HNSW query planner fixture",
+                embedding=vector,
+            )
+            for document, vector in chunks
+        ]
+    )
+    await postgres_session.commit()
+    await postgres_session.execute(text("ANALYZE documents"))
+    await postgres_session.execute(text("ANALYZE document_chunks"))
+
     query_vector = "[" + ",".join(["1"] + ["0"] * 383) + "]"
     await postgres_session.execute(text("SET LOCAL enable_seqscan = off"))
     plan = await postgres_session.execute(
@@ -217,3 +257,4 @@ async def test_postgres_semantic_candidate_query_can_use_hnsw_index(
     plan_text = "\n".join(row[0] for row in plan.all())
 
     assert "ix_document_chunks_embedding_hnsw" in plan_text
+
