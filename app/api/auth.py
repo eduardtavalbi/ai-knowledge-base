@@ -833,7 +833,7 @@ async def delete_account(
         # Recovery requests intentionally avoid attaching a user ID so their
         # response cannot disclose account existence. Delete their pseudonymous
         # email-linked audit events in a separate, explicit statement.
-        email_digest = hash_security_identifier(locked_user.email.strip().casefold())
+        email_digest = hash_security_identifier(locked_user.email.casefold())
         await db.execute(
             delete(SecurityAuditEvent).where(
                 SecurityAuditEvent.email_hash == email_digest
