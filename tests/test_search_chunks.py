@@ -257,7 +257,7 @@ async def test_search_uses_original_query_even_when_expansion_omits_it():
         "alternative wording",
     ])
     assert {chunk["chunk_id"] for chunk in chunks} == {1, 2}
-    assert db.execute.await_count == 4
+    assert db.execute.await_count == 2
 
 
 
