@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.db.base import Base
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
+from app.models.user import User
 from app.services.search import search_document_chunks
 
 
@@ -50,6 +51,8 @@ async def postgres_session():
 
         session_factory = async_sessionmaker(engine, expire_on_commit=False)
         async with session_factory() as session:
+            session.add(User(id=1, email="retrieval@example.com", hashed_password="unused"))
+            await session.commit()
             yield session
             await session.rollback()
     finally:
@@ -107,6 +110,7 @@ async def test_hybrid_search_retrieves_relevant_postgres_chunks(postgres_session
         results = await search_document_chunks(
             "VPN access authentication",
             postgres_session,
+            user_id=1,
             limit=5,
         )
 
@@ -120,6 +124,7 @@ async def test_hybrid_search_retrieves_relevant_postgres_chunks(postgres_session
 @pytest.mark.asyncio
 async def test_postgres_search_removes_duplicates_and_limits_chunks_per_document(
     postgres_session,
+user_id=1,
 ):
     handbook = Document(title="VPN security handbook", content="VPN access policies")
     postgres_session.add(handbook)
@@ -176,6 +181,7 @@ async def test_postgres_search_removes_duplicates_and_limits_chunks_per_document
         results = await search_document_chunks(
             "VPN access",
             postgres_session,
+            user_id=1,
             limit=5,
         )
 
@@ -194,12 +200,15 @@ async def test_postgres_search_removes_duplicates_and_limits_chunks_per_document
 @pytest.mark.asyncio
 async def test_postgres_search_supports_russian_and_english_expansions(
     postgres_session,
+user_id=1,
 ):
     russian_doc = Document(
+     user_id=1,
         title="Политика удалённой работы",
         content="Правила работы сотрудников из дома",
     )
     english_doc = Document(
+     user_id=1,
         title="Remote work policy",
         content="Rules for employees working from home",
     )
@@ -235,6 +244,7 @@ async def test_postgres_search_supports_russian_and_english_expansions(
         results = await search_document_chunks(
             "работа из дома",
             postgres_session,
+            user_id=1,
             limit=5,
         )
 
@@ -247,10 +257,12 @@ async def test_postgres_search_supports_russian_and_english_expansions(
 @pytest.mark.asyncio
 async def test_postgres_search_keeps_conflicting_policy_sources(postgres_session):
     old_policy = Document(
+     user_id=1,
         title="VPN policy 2024",
         content="External contractors do not need VPN access.",
     )
     current_policy = Document(
+     user_id=1,
         title="VPN policy 2026",
         content="External contractors must use VPN access.",
     )
@@ -286,6 +298,7 @@ async def test_postgres_search_keeps_conflicting_policy_sources(postgres_session
         results = await search_document_chunks(
             "VPN access contractors",
             postgres_session,
+            user_id=1,
             limit=5,
         )
 
@@ -321,6 +334,7 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
     query,
 ):
     policy = Document(
+     user_id=1,
         title=title,
         content=f"{positive_text} {negative_text}",
     )
@@ -356,6 +370,7 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
         results = await search_document_chunks(
             query,
             postgres_session,
+            user_id=1,
             limit=5,
         )
 
@@ -369,12 +384,15 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
 @pytest.mark.asyncio
 async def test_postgres_search_keeps_identical_chunks_from_separate_documents(
     postgres_session,
+user_id=1,
 ):
     first_doc = Document(
+     user_id=1,
         title="Security handbook",
         content="VPN access requires multi-factor authentication.",
     )
     second_doc = Document(
+     user_id=1,
         title="Remote access policy",
         content="VPN access requires multi-factor authentication.",
     )
@@ -410,6 +428,7 @@ async def test_postgres_search_keeps_identical_chunks_from_separate_documents(
         results = await search_document_chunks(
             "VPN access authentication",
             postgres_session,
+            user_id=1,
             limit=5,
         )
 
@@ -472,6 +491,7 @@ async def test_postgres_full_text_search_matches_inflected_words(
         results = await search_document_chunks(
             query,
             postgres_session,
+            user_id=1,
             limit=5,
         )
 
