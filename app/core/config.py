@@ -1,4 +1,5 @@
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,14 +15,14 @@ class Settings(BaseSettings):
     frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     frontend_public_url: str = "http://localhost:5173"
     email_verification_required: bool = False
-    auth_login_ip_limit: int = 20
-    auth_login_identity_limit: int = 8
-    auth_login_window_seconds: int = 900
-    auth_recovery_ip_limit: int = 20
-    auth_recovery_identity_limit: int = 4
-    auth_recovery_window_seconds: int = 3600
-    auth_registration_ip_limit: int = 10
-    auth_registration_window_seconds: int = 3600
+    auth_login_ip_limit: int = Field(default=20, gt=0)
+    auth_login_identity_limit: int = Field(default=8, gt=0)
+    auth_login_window_seconds: int = Field(default=900, gt=0)
+    auth_recovery_ip_limit: int = Field(default=20, gt=0)
+    auth_recovery_identity_limit: int = Field(default=4, gt=0)
+    auth_recovery_window_seconds: int = Field(default=3600, gt=0)
+    auth_registration_ip_limit: int = Field(default=10, gt=0)
+    auth_registration_window_seconds: int = Field(default=3600, gt=0)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
