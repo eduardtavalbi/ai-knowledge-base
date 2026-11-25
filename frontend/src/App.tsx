@@ -231,6 +231,12 @@ function App() {
     setResults((current) =>
       current.filter((item) => item.id !== document.id),
     )
+    if (answerSources.some((source) => source.document_id === document.id)) {
+      setAiAnswer('')
+      setAnswerSources([])
+      setResults([])
+      setHasSearched(false)
+    }
 
     setSelectedDocument((current) =>
       current?.id === document.id ? null : current,
@@ -286,25 +292,11 @@ function App() {
       )
 
       setResults((current) =>
-        current.map((item) =>
-          item.id === updatedDocument.id ? updatedDocument : item,
-        ),
+        current.filter((item) => item.id !== updatedDocument.id),
       )
-
-      if (query.trim()) {
-        try {
-          const searchResponse = await fetch(
-            `${API_URL}/documents/search?q=${encodeURIComponent(query)}&limit=10`,
-          )
-
-          if (searchResponse.ok) {
-            const freshResults: DocumentItem[] = await searchResponse.json()
-            setResults(freshResults)
-          }
-        } catch (error) {
-          console.error('Ошибка обновления результатов поиска:', error)
-        }
-      }
+      setAiAnswer('')
+      setAnswerSources([])
+      setHasSearched(false)
 
       setSelectedDocument(updatedDocument)
       setEditingDocument(null)
@@ -636,7 +628,7 @@ function App() {
           )}
 
           <footer className="footer">
-            <span><span className="status-indicator" /> Mindbase workspace</span>
+            <span><span className={`status-indicator ${apiStatus}`} /> Mindbase workspace</span>
             <span>Built with FastAPI &amp; vector search</span>
           </footer>
         </section>
