@@ -210,6 +210,7 @@ function App() {
         // Another tab may have rotated the shared cookie just before this
         // request arrived. Retry once with the browser's newly stored cookie.
         if (response.status === 409) {
+          await new Promise((resolve) => window.setTimeout(resolve, 100))
           response = await fetch(`${API_URL}/auth/refresh`, {
             method: 'POST',
             credentials: 'include',
