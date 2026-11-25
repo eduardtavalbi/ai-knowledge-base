@@ -16,6 +16,18 @@ from app.models.user import User
 from app.db.base import Base
 from app.db.session import get_db
 
+@pytest.fixture(autouse=True)
+def deterministic_chunk_embeddings(monkeypatch):
+    """Keep API tests independent of model downloads and GPU runtimes."""
+    from app.services import chunk_storage
+
+    monkeypatch.setattr(
+        chunk_storage,
+        "generate_embeddings",
+        lambda texts: [[0.0] * 384 for _ in texts],
+    )
+
+
 test_engine = create_async_engine(
     "sqlite+aiosqlite:///:memory:",
     connect_args={"check_same_thread": False},
