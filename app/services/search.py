@@ -264,7 +264,6 @@ async def search_document_chunks(
                     Document.user_id == user_id,
                 )
                 .exists(),
-                distance <= 0.55,
             )
             .order_by(distance)
             .limit(candidate_limit)
