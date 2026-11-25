@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
+from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.base import Base
@@ -122,6 +122,11 @@ async def test_postgres_hybrid_search_combines_vector_and_full_text(
 async def test_postgres_hybrid_search_filters_weak_vector_matches(
     postgres_session,
 ):
+    # Keep the test independent if a PostgreSQL schema contains leftover rows.
+    await postgres_session.execute(delete(DocumentChunk))
+    await postgres_session.execute(delete(Document))
+    await postgres_session.commit()
+
     document = Document(
         title="Unrelated material",
         content="A document without the requested terms",
