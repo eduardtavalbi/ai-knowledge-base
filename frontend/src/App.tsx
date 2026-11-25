@@ -402,30 +402,25 @@ function App() {
 
               <div className="results-list">
                 {documents.map((document) => (
-                  <article
-                    className="result-card"
-                    key={document.id}
-                    onClick={() => setSelectedDocument(document)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        setSelectedDocument(document)
-                      }
-                    }}
-                  >
-                    <div className="document-icon">
-                      <FileText size={21} />
-                    </div>
-                    <div className="result-info">
-                      <h3>{document.title}</h3>
-                      <p>{document.content}</p>
-                      <div className="result-meta">
-                        <span><Database size={13} /> Документ</span>
-                        <span><Clock3 size={13} /> В базе знаний</span>
+                  <article className="result-card" key={document.id}>
+                    <button
+                      type="button"
+                      className="result-open-button"
+                      onClick={() => setSelectedDocument(document)}
+                      aria-label={`Открыть документ ${document.title}`}
+                    >
+                      <div className="document-icon">
+                        <FileText size={21} />
                       </div>
-                    </div>
+                      <div className="result-info">
+                        <h3>{document.title}</h3>
+                        <p>{document.content}</p>
+                        <div className="result-meta">
+                          <span><Database size={13} /> Документ</span>
+                          <span><Clock3 size={13} /> В базе знаний</span>
+                        </div>
+                      </div>
+                    </button>
                     <button
                       className="edit-button"
                       title="Редактировать документ"
@@ -582,29 +577,24 @@ function App() {
 
             <div className="results-list">
               {results.map((document) => (
-                <article
-                  className="result-card"
-                  key={document.id}
-                  onClick={() => setSelectedDocument(document)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      setSelectedDocument(document)
-                    }
-                  }}
-                >
-                  <div className="document-icon"><FileText size={21} /></div>
-                  <div className="result-info">
-                    <h3>{document.title}</h3>
-                    <p>{document.content}</p>
-                    <div className="result-meta">
-                      <span><Database size={13} /> Документ</span>
-                      <span><Clock3 size={13} /> В базе знаний</span>
+                <article className="result-card" key={document.id}>
+                  <button
+                    type="button"
+                    className="result-open-button"
+                    onClick={() => setSelectedDocument(document)}
+                    aria-label={`Открыть документ ${document.title}`}
+                  >
+                    <div className="document-icon"><FileText size={21} /></div>
+                    <div className="result-info">
+                      <h3>{document.title}</h3>
+                      <p>{document.content}</p>
+                      <div className="result-meta">
+                        <span><Database size={13} /> Документ</span>
+                        <span><Clock3 size={13} /> В базе знаний</span>
+                      </div>
                     </div>
-                  </div>
-                  <ChevronRight className="result-arrow" size={19} />
+                    <ChevronRight className="result-arrow" size={19} />
+                  </button>
                 </article>
               ))}
               {!results.length && !message && (
