@@ -70,8 +70,8 @@ def embedding(first: float, second: float = 0.0) -> list[float]:
 
 @pytest.mark.asyncio
 async def test_hybrid_search_retrieves_relevant_postgres_chunks(postgres_session):
-    handbook = Document(title="Remote work handbook", content="Remote work rules")
-    cafeteria = Document(title="Cafeteria menu", content="Weekly meal schedule")
+    handbook = Document(user_id=1, title="Remote work handbook", content="Remote work rules")
+    cafeteria = Document(user_id=1, title="Cafeteria menu", content="Weekly meal schedule")
     postgres_session.add_all([handbook, cafeteria])
     await postgres_session.flush()
 
@@ -125,7 +125,7 @@ async def test_hybrid_search_retrieves_relevant_postgres_chunks(postgres_session
 async def test_postgres_search_removes_duplicates_and_limits_chunks_per_document(
     postgres_session,
 ):
-    handbook = Document(title="VPN security handbook", content="VPN access policies")
+    handbook = Document(user_id=1, title="VPN security handbook", content="VPN access policies")
     postgres_session.add(handbook)
     await postgres_session.flush()
 
@@ -459,7 +459,7 @@ async def test_postgres_full_text_search_matches_inflected_words(
     content,
     query,
 ):
-    document = Document(title=title, content=content)
+    document = Document(user_id=1, title=title, content=content)
     postgres_session.add(document)
     await postgres_session.flush()
 
@@ -493,3 +493,63 @@ async def test_postgres_full_text_search_matches_inflected_words(
         )
 
     assert [item["chunk_id"] for item in results] == [chunk.id]
+
+
+@pytest.mark.asyncio
+async def test_postgres_retrieval_never_returns_another_users_chunks(postgres_session):
+    other_user = User(
+        id=2,
+        email="other-retrieval@example.com",
+        hashed_password="unused",
+    )
+    postgres_session.add(other_user)
+    await postgres_session.flush()
+
+    own_document = Document(
+        user_id=1,
+        title="Private account one",
+        content="Confidential architecture notes",
+    )
+    other_document = Document(
+        user_id=2,
+        title="Private account two",
+        content="Confidential architecture notes",
+    )
+    postgres_session.add_all([own_document, other_document])
+    await postgres_session.flush()
+
+    own_chunk = DocumentChunk(
+        document_id=own_document.id,
+        chunk_index=0,
+        content="Confidential architecture notes for account one.",
+        embedding=embedding(1.0),
+    )
+    other_chunk = DocumentChunk(
+        document_id=other_document.id,
+        chunk_index=0,
+        content="Confidential architecture notes for account two.",
+        embedding=embedding(1.0),
+    )
+    postgres_session.add_all([own_chunk, other_chunk])
+    await postgres_session.commit()
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.search.generate_embeddings",
+            return_value=[embedding(1.0)],
+        ),
+    ):
+        results = await search_document_chunks(
+            "Confidential architecture notes",
+            postgres_session,
+            user_id=1,
+            limit=5,
+        )
+
+    assert [item["chunk_id"] for item in results] == [own_chunk.id]
+    assert all(item["document_id"] == own_document.id for item in results)
