@@ -15,6 +15,8 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 - **Relevance filtering** — filters out low-scoring semantic search results and limits duplicate or overly concentrated chunks.
 - **Asynchronous backend** — uses FastAPI and SQLAlchemy's async API.
 - **Database migrations** — manages schema changes with Alembic.
+- **Account security** — Argon2id password hashing, short-lived access tokens, HttpOnly refresh cookies, refresh-token rotation and replay detection.
+- **Session management** — revoke the current session on logout and list/revoke other active sessions.
 - **Automated tests** — tests the API and application behavior with pytest.
 - **Docker Compose** — provides a containerized development environment for the backend and database.
 
@@ -114,6 +116,8 @@ Configure the following variables in `.env`:
 APP_NAME=AI Knowledge Base API
 DEBUG=false
 AUTH_SECRET_KEY=GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
+REFRESH_TOKEN_COOKIE_SECURE=false
+FRONTEND_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5434/knowledge_base
 POSTGRES_DB=knowledge_base
 POSTGRES_USER=postgres
@@ -122,7 +126,7 @@ GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 GEMINI_MODEL=gemini-3.8-flash
 ```
 
-Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys.
+Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys. For local HTTP development, keep `REFRESH_TOKEN_COOKIE_SECURE=false`; set it to `true` behind HTTPS in production. Set `FRONTEND_ORIGINS` to the exact comma-separated origins serving the browser app (without trailing slashes).
 
 If you are upgrading a database that already contains documents, set `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` before applying the ownership migration. The migration assigns all existing documents to this account; choose credentials you control. These variables are only needed for a database with existing documents.
 
@@ -188,10 +192,12 @@ python -m pytest -v
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/auth/register` | Register an account |
-| `POST` | `/auth/login` | Obtain a bearer access token |
+| `POST` | `/auth/login` | Create a session and issue an access token |
+| `POST` | `/auth/refresh` | Rotate the HttpOnly refresh cookie and issue a new access token |
+| `POST` | `/auth/logout` | Revoke the current session |
 | `GET` | `/auth/me` | Get the authenticated account |
-
-All `/documents` endpoints require `Authorization: Bearer <access_token>`. The frontend keeps the short-lived access token in memory for the current tab; refreshing the page requires signing in again.
+| `GET` | `/auth/sessions` | List the account's active sessions |
+| `DELETE` | `/auth/sessions/{session_id}` | Revoke one of the account's sessions |
 | `GET` | `/documents/` | List the current user's documents |
 | `POST` | `/documents/` | Create a document |
 | `GET` | `/documents/{id}` | Retrieve a document |
@@ -202,7 +208,9 @@ All `/documents` endpoints require `Authorization: Bearer <access_token>`. The f
 | `GET` | `/documents/search/chunks?q=...` | Search document chunks |
 | `POST` | `/documents/ask` | Answer a question using retrieved context |
 
-See the interactive API documentation at `/docs` for request schemas and response formats.
+The frontend keeps the short-lived access token in memory and the API sets a rotating refresh token in an HttpOnly cookie. A page reload restores the session through `POST /auth/refresh`; refresh-token reuse revokes that session. Cookie-based authentication routes validate browser `Origin` values against `FRONTEND_ORIGINS`.
+
+All document endpoints require `Authorization: Bearer <access_token>`. See the interactive API documentation at `/docs` for request schemas and response formats.
 
 ## Project Structure
 
@@ -235,5 +243,5 @@ Mindbase is evolving into a multi-tenant commercial application. Each account ow
 - Use `.env.example` as a template with placeholder values only.
 - Document endpoints require a bearer access token. Passwords are hashed with Argon2id; JWT access tokens expire after 30 minutes.
 - Every document query and retrieval path is scoped by the authenticated owner. Identical content can exist in separate accounts without cross-account deduplication.
-- This is an initial authentication milestone, not yet a production launch approval: add email verification, abuse/rate limiting, password reset, refresh-token/session revocation, audit logging, and production secret management before public commercial deployment.
+- Session refresh, token rotation/replay detection, logout, and per-session revocation are implemented. Before public commercial deployment, still add email verification, password reset, abuse/rate limiting, audit logging, and production secret management.
 - Docker Compose binds the API and database ports to loopback and requires an explicit `POSTGRES_PASSWORD`; do not replace this with a default or weak password.

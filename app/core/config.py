@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     )
 
     auth_secret_key: str = "CHANGE_ME_USE_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS"
+    refresh_token_cookie_secure: bool = False
+    frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     migration_owner_email: str = ""
     migration_owner_password: str = ""
     deepseek_api_key: str = ""
