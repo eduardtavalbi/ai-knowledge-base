@@ -275,16 +275,23 @@ function App() {
       const data: AskResponse = await response.json()
       if (requestId !== searchRequestId.current) return
 
+      const sources = data.sources ?? []
       setAiAnswer(data.answer)
-      setAnswerSources(data.sources ?? [])
+      setAnswerSources(sources)
 
-      setResults(
-        (data.sources ?? []).map((source) => ({
-          id: source.document_id,
-          title: source.title,
-          content: source.content,
-        })),
-      )
+      // Several retrieved chunks can belong to the same document. Keep every
+      // chunk in the citation list, but show each document only once.
+      const uniqueDocuments = new Map<number, DocumentItem>()
+      for (const source of sources) {
+        if (!uniqueDocuments.has(source.document_id)) {
+          uniqueDocuments.set(source.document_id, {
+            id: source.document_id,
+            title: source.title,
+            content: source.content,
+          })
+        }
+      }
+      setResults([...uniqueDocuments.values()])
 
       if (!data.answer && !data.sources?.length) {
         setMessage('Не удалось найти информацию по этому вопросу.')
@@ -501,6 +508,7 @@ function App() {
 
         <button
           className={`nav-item ${activePage === 'search' ? 'active' : ''}`}
+          aria-current={activePage === 'search' ? 'page' : undefined}
           onClick={() => setActivePage('search')}
         >
           <Search size={18} />
@@ -508,6 +516,7 @@ function App() {
         </button>
         <button
           className={`nav-item ${activePage === 'documents' ? 'active' : ''}`}
+          aria-current={activePage === 'documents' ? 'page' : undefined}
           onClick={() => {
             setActivePage('documents')
             void loadDocuments()
@@ -520,7 +529,7 @@ function App() {
 
 
         <div className="sidebar-bottom">
-          <div className="status-card">
+          <div className="status-card" role="status" aria-live="polite">
             <span className={`status-indicator ${apiStatus}`} />
             <div>
               <strong>API подключение</strong>
@@ -653,7 +662,12 @@ function App() {
                   <X size={16} />
                 </button>
               )}
-              <button className="search-button" type="submit" disabled={loading}>
+              <button
+                className="search-button"
+                type="submit"
+                disabled={loading}
+                aria-label={loading ? 'Выполняется поиск' : 'Найти'}
+              >
                 {loading ? <LoaderCircle className="spin" size={17} /> : 'Найти'}
               </button>
             </form>
@@ -706,7 +720,7 @@ function App() {
                           <span>Раздел: {source.source_section}</span>
                         )}
                         <span>
-                          Релевантность: {(source.score * 100).toFixed(1)}%
+                          Относительная оценка ранжирования: {(source.score * 100).toFixed(1)}%
                         </span>
                       </div>
                     </article>
@@ -726,7 +740,12 @@ function App() {
               <span className="result-count">{results.length} документа</span>
             </div>
 
-            <div className="results-list">
+            <div className="results-list" aria-busy={loading}>
+              {loading && (
+                <div className="empty-state" role="status">
+                  <LoaderCircle className="spin" size={18} /> Ищу информацию в базе знаний…
+                </div>
+              )}
               {results.map((document) => (
                 <article className="result-card" key={document.id}>
                   <button
@@ -748,7 +767,7 @@ function App() {
                   </button>
                 </article>
               ))}
-              {!results.length && !message && (
+              {!loading && !results.length && !message && (
                 <div className="empty-state">
                   {hasSearched
                     ? 'По этому запросу документы не найдены.'
