@@ -37,14 +37,29 @@ def test_production_configuration_accepts_secure_values():
         {"auth_secret_key": "too-short"},
         {"refresh_token_cookie_secure": False},
         {"frontend_origins": "http://app.example.com"},
+        {"frontend_origins": "https://app.example.com/path"},
+        {"frontend_public_url": "https://"},
         {"frontend_public_url": "http://app.example.com"},
         {"database_url": "postgresql+asyncpg://mindbase:CHANGE_ME@db:5432/mindbase"},
+        {"database_url": "postgresql+asyncpg:///mindbase"},
         {"email_verification_required": True},
+        {
+            "email_verification_required": True,
+            "smtp_host": "smtp.example.com",
+            "smtp_from_email": "noreply@example.com",
+            "smtp_username": "mailer",
+            "smtp_password": "",
+        },
     ],
 )
 def test_production_configuration_rejects_unsafe_values(overrides):
     with pytest.raises(ValidationError):
         production_settings(**overrides)
+
+
+def test_unknown_environment_is_rejected():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, environment="staging")
 
 
 def test_smtp_transport_modes_are_mutually_exclusive():
