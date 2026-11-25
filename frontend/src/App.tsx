@@ -194,7 +194,7 @@ function App() {
     }
   }
 
-  async function refreshAccessToken(): Promise<string | null> {
+  const refreshAccessToken = useCallback(async (): Promise<string | null> => {
     try {
       const response = await fetch(`${API_URL}/auth/refresh`, {
         method: 'POST',
