@@ -48,9 +48,9 @@ If an area has not yet been fully inventoried, label its score **unassessed**; d
 - Active branch: `feat/atomic-document-rollback-tests`
 - Active PR: [#7 — Harden document persistence and embedding initialization](https://github.com/eduardtavalbi/ai-knowledge-base/pull/7)
 - PR #7 status: open, Draft, not merged. Do not merge without explicit user authorization.
-- PR #7 head at checkpoint: `4bbd3327b6d0408d4f63cd7ce55252ffaf9e6d18`
-- PR #7 CI: run #353, run ID `45723786987`, exact head above — **success**. Docker Compose validation, dependency installation without the heavyweight model runtime, PostgreSQL connection, migrations, all 203 tests and cleanup completed successfully.
-- Frontend CI: run #224, run ID `45723786990`, exact same head — **success**. TypeScript build and ESLint passed.
+- PR #7 current head: `c41f3c10cd07e8238865c3c9907afeca1b29b7f3`.
+- PR #7 Backend CI: run #359, run ID `45724052876`, exact head above — **success**. Docker Compose validation, lightweight test dependency install, PostgreSQL connection, Alembic migrations and **204 tests passed in 7.87s**; cleanup completed.
+- PR #7 Frontend CI: run #230, run ID `45724052783`, exact same head — **success**. TypeScript/Vite build and ESLint passed.
 - Previous full-runtime baseline: run #344 on `0132489`, 203 tests passed in 19.68s.
 - PRs #4, #5 and #6 are merged into `main`. Their exact merge commits and CI evidence are recorded in the project handoff notes / GitHub history; verify against GitHub before making claims in a future report.
 
@@ -73,6 +73,7 @@ The following work is present in PR #7 and its full CI passed on `4802a29`:
 - atomic concurrent rate-limit test against PostgreSQL;
 - protection against stale rate-limit windows moving the active bucket backwards, with regression coverage;
 - delayed requests are counted against the active bucket rather than bypassing its limit;
+- `Retry-After` is calculated from the effective active rate-limit window, including when an older in-flight request arrives after the window has advanced; regression test covers the stale-window race.
 - export download cleanup waits before revoking the Blob URL, avoiding premature release;
 - retrieval score UI is labelled as a relative result weight, not as answer confidence.
 
@@ -100,7 +101,7 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 
 ## Next actions — continue here
 
-1. Refresh PR #7 state and CI head before any further work; latest checkpoint is `4bbd332` with CI #353 passing.
+1. Refresh PR #7 state and CI head before any further work; current checkpoint `c41f3c1` passed Backend #359 and Frontend #230.
 2. Finish the PR #7 reliability/security review. Investigate concrete issues only; avoid speculative changes.
 3. Keep PR #7 Draft and unmerged until explicit user authorization.
 4. Complete browser-level frontend journey checks: registration/login, refresh/session expiry, upload, document CRUD, search/answer/source display, account export/delete and narrow-screen layout.
@@ -115,3 +116,4 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 | 2026-11-26 | Created persistent progress ledger; recorded PR #7 checkpoint and separated implemented/verified/integrated states. | PR #7 head `4802a29`; CI run #342 (`45722270626`) successful. |
 | 2026-11-26 | Fixed frontend export URL lifetime and clarified RAG score label. | Commit `0132489`; Frontend CI #215 and Backend CI #344 passed; 203 tests passed. |
 | 2026-11-26 | Made CI tests independent of the production embedding runtime using deterministic fixtures; excluded SentenceTransformers/Torch from test-only installs while preserving production requirements. | Commits `3e359e0`, `710e288`, `4bbd332`; CI #353 passed: 203 tests in 7.42s; Frontend CI #224 passed. |
+| 2026-11-26 | Corrected stale-window `Retry-After` calculation to use the effective active bucket; added delayed-request regression test. | Commits `12514a0` and `4be5126`; Backend CI #359 passed on head `c41f3c1`: 204 tests in 7.87s; Frontend CI #230 passed. |
