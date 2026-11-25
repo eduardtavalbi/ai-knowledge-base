@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 from collections.abc import Sequence
 
@@ -92,7 +93,7 @@ async def _create_document_if_new(
         title=title,
         content=content,
         content_sha256=content_sha256,
-        embedding=generate_embedding(content),
+        embedding=await asyncio.to_thread(generate_embedding, content),
     )
     db.add(document)
 
@@ -234,7 +235,10 @@ async def update_document(
     document.title = document_data.title
     document.content = document_data.content
     document.content_sha256 = content_sha256
-    document.embedding = generate_embedding(document_data.content)
+    document.embedding = await asyncio.to_thread(
+        generate_embedding,
+        document_data.content,
+    )
 
     try:
         await db.execute(
