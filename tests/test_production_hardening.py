@@ -209,3 +209,56 @@ async def test_identity_rate_limit_remains_ip_scoped_by_default():
             )
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_delayed_rate_limit_request_cannot_move_bucket_to_an_older_window(monkeypatch):
+    from app.services import security
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    moments = iter(
+        [
+            datetime(2026, 1, 1, 12, 0, 59, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 0, 59, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 1, 1, tzinfo=timezone.utc),
+        ]
+    )
+
+    class ControlledDateTime:
+        @classmethod
+        def now(cls, tz=None):
+            return next(moments)
+
+        @staticmethod
+        def fromtimestamp(value, tz=None):
+            return datetime.fromtimestamp(value, tz)
+
+    monkeypatch.setattr(security, "datetime", ControlledDateTime)
+    request = SimpleNamespace(client=SimpleNamespace(host="192.0.2.55"))
+
+    async with session_factory() as db:
+        for _ in range(4):
+            await security.enforce_rate_limit(
+                db,
+                request,
+                "window_boundary",
+                ip_limit=10,
+                window_seconds=60,
+            )
+
+        bucket = await db.get(
+            RateLimitBucket,
+            security.hash_security_identifier("window_boundary:ip:192.0.2.55"),
+        )
+
+    assert bucket is not None
+    assert bucket.window_started_at == datetime(
+        2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc
+    )
+    assert bucket.request_count == 2
+    await engine.dispose()
