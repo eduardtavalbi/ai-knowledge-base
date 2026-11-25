@@ -139,11 +139,17 @@ async def test_delete_document(client):
 async def test_upload_rejects_missing_filename_with_clear_error():
     upload = UploadFile(filename=None, file=BytesIO(b"Document content"))
 
-    with pytest.raises(HTTPException) as error:
+    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
+    with (
+        patch("app.api.documents.enforce_rate_limit", new_callable=AsyncMock),
+        pytest.raises(HTTPException) as error,
+    ):
         await upload_document(
             response=Response(),
+            http_request=request,
             file=upload,
-            db=None,
+            db=AsyncMock(),
+            user=SimpleNamespace(id=1),
         )
 
     assert error.value.status_code == 400
