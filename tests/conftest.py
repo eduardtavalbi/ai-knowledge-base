@@ -89,3 +89,44 @@ async def unauthenticated_client():
     app.dependency_overrides.clear()
     async with test_engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)
+
+
+@pytest_asyncio.fixture
+async def tenant_client():
+    async with test_engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    async def override_get_db():
+        async with TestingSessionLocal() as session:
+            yield session
+
+    async with TestingSessionLocal() as session:
+        first_user = User(
+            id=101,
+            email="first-tenant@example.com",
+            hashed_password="unused",
+        )
+        second_user = User(
+            id=102,
+            email="second-tenant@example.com",
+            hashed_password="unused",
+        )
+        session.add_all([first_user, second_user])
+        await session.commit()
+
+    active_user = {"value": first_user}
+
+    async def override_current_user():
+        return active_user["value"]
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_current_user
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as test_client:
+        yield test_client, active_user, first_user, second_user
+
+    app.dependency_overrides.clear()
+    async with test_engine.begin() as connection:
+        await connection.run_sync(Base.metadata.drop_all)
