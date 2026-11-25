@@ -497,3 +497,31 @@ async def test_forgot_password_does_not_disclose_unknown_email(unauthenticated_c
     assert known.status_code == unknown.status_code == 202
     assert known.json() == unknown.json()
     assert sent == ["known@example.com"]
+
+
+@pytest.mark.asyncio
+async def test_login_rate_limit_blocks_repeated_password_guesses(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(settings, "auth_login_identity_limit", 2)
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "limited@example.com", "password": "a-long-test-password"},
+    )
+
+    first = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "limited@example.com", "password": "wrong-password-123"},
+    )
+    second = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "limited@example.com", "password": "wrong-password-456"},
+    )
+    blocked = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "limited@example.com", "password": "wrong-password-789"},
+    )
+
+    assert first.status_code == 401
+    assert second.status_code == 401
+    assert blocked.status_code == 429
+    assert int(blocked.headers["retry-after"]) > 0
+    assert blocked.json()["detail"] == "Too many requests. Please try again later."
