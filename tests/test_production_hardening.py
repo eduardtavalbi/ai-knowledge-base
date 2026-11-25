@@ -257,7 +257,7 @@ async def test_delayed_rate_limit_request_cannot_move_bucket_to_an_older_window(
         )
 
     assert bucket is not None
-    assert bucket.window_started_at == datetime(
+    assert bucket.window_started_at.replace(tzinfo=timezone.utc) == datetime(
         2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc
     )
     assert bucket.request_count == 2
