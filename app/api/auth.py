@@ -804,6 +804,10 @@ async def delete_account(
                 AccountActionToken.user_id == locked_user.id
             )
         )
+        session_ids = select(UserSession.id).where(UserSession.user_id == locked_user.id)
+        await db.execute(
+            delete(SessionRefreshToken).where(SessionRefreshToken.session_id.in_(session_ids))
+        )
         await db.execute(
             delete(UserSession).where(UserSession.user_id == locked_user.id)
         )

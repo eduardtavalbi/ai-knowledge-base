@@ -9,7 +9,7 @@ from app.models.user import User
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.models.account_action_token import AccountActionToken
-from app.models.user_session import UserSession
+from app.models.user_session import UserSession, SessionRefreshToken
 from conftest import TestingSessionLocal
 
 
@@ -724,4 +724,5 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
         assert (await session.execute(select(func.count()).select_from(Document))).scalar_one() == 0
         assert (await session.execute(select(func.count()).select_from(DocumentChunk))).scalar_one() == 0
         assert (await session.execute(select(func.count()).select_from(UserSession))).scalar_one() == 0
+        assert (await session.execute(select(func.count()).select_from(SessionRefreshToken))).scalar_one() == 0
         assert (await session.execute(select(func.count()).select_from(AccountActionToken))).scalar_one() == 0
