@@ -3,7 +3,7 @@ import hmac
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, Request
-from sqlalchemy import case
+from sqlalchemy import case, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,9 +47,7 @@ async def enforce_rate_limit(
     retry_after = 1
 
     for dimension, value, limit in dimensions:
-        key_hash = hashlib.sha256(
-            f"{scope}:{dimension}:{value}".encode("utf-8")
-        ).hexdigest()
+        key_hash = _digest(f"{scope}:{dimension}:{value}")
         statement = insert_statement(RateLimitBucket).values(
             key_hash=key_hash,
             window_started_at=window_start,
@@ -77,6 +75,7 @@ async def enforce_rate_limit(
                 int((window_start + timedelta(seconds=window_seconds) - now).total_seconds()) + 1,
             )
 
+    await db.execute(delete(RateLimitBucket).where(RateLimitBucket.window_started_at < now - timedelta(days=1)))
     await db.commit()
     if exceeded:
         raise HTTPException(
