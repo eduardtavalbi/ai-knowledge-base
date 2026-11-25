@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pwdlib import PasswordHash
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +24,11 @@ from app.models.user_session import UserSession, SessionRefreshToken
 from app.models.account_action_token import AccountActionToken
 from app.models.security_audit_event import SecurityAuditEvent
 from app.services.email import send_account_email
-from app.services.security import enforce_rate_limit, record_security_event
+from app.services.security import (
+    enforce_rate_limit,
+    hash_security_identifier,
+    record_security_event,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -823,7 +827,14 @@ async def delete_account(
         # Remove account-linked audit records as part of the user's data deletion.
         await db.execute(
             delete(SecurityAuditEvent).where(
-                SecurityAuditEvent.user_id == locked_user.id
+                or_(
+                    SecurityAuditEvent.user_id == locked_user.id,
+                    # Recovery requests intentionally avoid attaching a user ID
+                    # so their response cannot disclose account existence. Remove
+                    # those pseudonymous email-linked events on account deletion too.
+                    SecurityAuditEvent.email_hash
+                    == hash_security_identifier(locked_user.email.casefold()),
+                )
             )
         )
         await db.delete(locked_user)
