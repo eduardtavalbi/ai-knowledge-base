@@ -76,8 +76,8 @@ async def test_hybrid_search_retrieves_relevant_postgres_chunks(postgres_session
             return_value=["VPN access authentication"],
         ),
         patch(
-            "app.services.search.generate_embedding",
-            return_value=embedding(1.0),
+            "app.services.search.generate_embeddings",
+            return_value=[embedding(1.0)],
         ),
     ):
         results = await search_document_chunks(
@@ -145,7 +145,7 @@ async def test_postgres_search_removes_duplicates_and_limits_chunks_per_document
             return_value=["VPN access"],
         ),
         patch(
-            "app.services.search.generate_embedding",
+            "app.services.search.generate_embeddings",
             return_value=embedding(1.0),
         ),
     ):
@@ -204,8 +204,8 @@ async def test_postgres_search_supports_russian_and_english_expansions(
             return_value=["удалённая работа", "remote work"],
         ),
         patch(
-            "app.services.search.generate_embedding",
-            side_effect=[embedding(1.0), embedding(1.0), embedding(0.0, 1.0)],
+            "app.services.search.generate_embeddings",
+            return_value=[embedding(1.0), embedding(1.0), embedding(0.0, 1.0)],
         ),
     ):
         results = await search_document_chunks(
@@ -255,7 +255,7 @@ async def test_postgres_search_keeps_conflicting_policy_sources(postgres_session
             return_value=["VPN access contractors"],
         ),
         patch(
-            "app.services.search.generate_embedding",
+            "app.services.search.generate_embeddings",
             return_value=embedding(1.0),
         ),
     ):
@@ -325,7 +325,7 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
             return_value=[query],
         ),
         patch(
-            "app.services.search.generate_embedding",
+            "app.services.search.generate_embeddings",
             return_value=embedding(1.0),
         ),
     ):
@@ -379,7 +379,7 @@ async def test_postgres_search_keeps_identical_chunks_from_separate_documents(
             return_value=["VPN access authentication"],
         ),
         patch(
-            "app.services.search.generate_embedding",
+            "app.services.search.generate_embeddings",
             return_value=embedding(1.0),
         ),
     ):
