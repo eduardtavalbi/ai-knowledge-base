@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     ai_search_identity_limit: int = Field(default=60, gt=0)
     ai_search_window_seconds: int = Field(default=60, gt=0)
     smtp_host: str = ""
-    smtp_port: int = 587
+    smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_from_email: str = ""
@@ -96,11 +96,10 @@ class Settings(BaseSettings):
                 or "change_me" in database_url.password.casefold()
             ):
                 raise ValueError("DATABASE_URL must use PostgreSQL with a host, database, username, and non-placeholder password in production")
-            if self.email_verification_required:
-                if not (self.smtp_host and self.smtp_from_email):
-                    raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required when email verification is enabled in production")
-                if self.smtp_username and not self.smtp_password:
-                    raise ValueError("SMTP_PASSWORD is required when SMTP_USERNAME is configured")
+            if not (self.smtp_host and self.smtp_from_email):
+                raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required for production account email delivery")
+            if self.smtp_username and not self.smtp_password:
+                raise ValueError("SMTP_PASSWORD is required when SMTP_USERNAME is configured")
         return self
 
     model_config = SettingsConfigDict(
