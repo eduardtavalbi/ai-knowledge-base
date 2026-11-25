@@ -18,7 +18,8 @@ from app.models.document import  Document
 from app.models.document_chunk import DocumentChunk
 from app.schemas.document import (DocumentCreate, DocumentResponse,
                                   DocumentUpdate, SearchResultResponse,
-                                  ChunkSearchResult, AskRequest, AskResponse)
+                                  ChunkSearchResult, AskRequest, AskResponse,
+                                  MAX_DOCUMENT_CONTENT_BYTES)
 from app.services.chunk_storage import save_document_chunks
 from app.services.document_extraction import (
     extract_document,
@@ -276,7 +277,7 @@ async def upload_document(
             detail="Filename is required"
         )
 
-    max_size = 2 * 1024 * 1024
+    max_size = MAX_DOCUMENT_CONTENT_BYTES
     content_bytes = await file.read(max_size + 1)
 
     if len(content_bytes) > max_size:
