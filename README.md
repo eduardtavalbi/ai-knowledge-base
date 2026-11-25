@@ -121,7 +121,7 @@ GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 GEMINI_MODEL=gemini-3.8-flash
 ```
 
-Use your own credentials. Never commit `.env` or API keys.
+Use your own credentials. Set a non-default database password in `POSTGRES_PASSWORD`. Never commit `.env` or API keys.
 
 ### 3. Start the database
 
@@ -129,7 +129,7 @@ Use your own credentials. Never commit `.env` or API keys.
 docker compose up -d db
 ```
 
-The database is exposed on port `5434` on the host. Docker Compose creates the persistent volume `ai_knowledge_base_vector_data` automatically on first startup.
+The database is exposed on `127.0.0.1:5434` only. The API is also bound to `127.0.0.1:8000`; neither service is exposed to other machines on the network. Docker Compose creates the persistent volume `ai_knowledge_base_vector_data` automatically on first startup.
 
 ### 4. Set up the Python environment
 
@@ -225,3 +225,5 @@ Mindbase is an ongoing personal project focused on backend development, semantic
 - Keep API keys and credentials in local environment files.
 - Do not commit `.env`, database backups, or other sensitive files.
 - Use `.env.example` as a template with placeholder values only.
+- The API currently has no authentication or user isolation. Keep it on a trusted local machine; do not expose it to the public internet or an untrusted network without adding authentication, authorization, and deployment-level protections.
+- Docker Compose binds the API and database ports to loopback and requires an explicit `POSTGRES_PASSWORD`; do not replace this with a default or weak password.
