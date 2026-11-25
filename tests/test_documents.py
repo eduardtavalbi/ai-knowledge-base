@@ -932,3 +932,59 @@ def test_extracted_text_size_limit_is_measured_in_utf8_bytes():
 
     with pytest.raises(DocumentTooLargeError, match="2 MB limit"):
         _validate_extracted_text_size("я" * (MAX_EXTRACTED_TEXT_BYTES // 2 + 1))
+
+@pytest.mark.asyncio
+async def test_create_rolls_back_flushed_partial_chunks_when_chunk_storage_fails(client):
+    from sqlalchemy import select
+
+    from app.api.documents import _create_document_if_new
+    from app.models.document import Document
+    from app.models.document_chunk import DocumentChunk
+
+    async def add_partial_chunk_then_fail(document, db, source_segments=None):
+        db.add(
+            DocumentChunk(
+                document_id=document.id,
+                chunk_index=0,
+                content="Partially persisted chunk",
+                embedding=[0.0] * 384,
+            )
+        )
+        await db.flush()
+        raise RuntimeError("chunk storage failed after flush")
+
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch(
+            "app.api.documents.save_document_chunks",
+            side_effect=add_partial_chunk_then_fail,
+        ),
+    ):
+        async with TestingSessionLocal() as db:
+            with pytest.raises(
+                RuntimeError,
+                match="chunk storage failed after flush",
+            ):
+                await _create_document_if_new(
+                    title="Partial chunk rollback",
+                    content="The document and flushed chunk must both roll back.",
+                    db=db,
+                    user_id=1,
+                )
+
+    async with TestingSessionLocal() as db:
+        documents = (
+            await db.execute(
+                select(Document).where(Document.title == "Partial chunk rollback")
+            )
+        ).scalars().all()
+        chunks = (
+            await db.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.content == "Partially persisted chunk"
+                )
+            )
+        ).scalars().all()
+
+    assert documents == []
+    assert chunks == []
