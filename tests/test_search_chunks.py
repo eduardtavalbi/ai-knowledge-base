@@ -72,8 +72,10 @@ async def test_hybrid_search_returns_relevant_chunks():
     chunk = make_chunk(10, 1, "FastAPI is a Python framework.", source_page=4, source_section="Backend")
     db = AsyncMock()
     db.execute.side_effect = [
-        result([(document, chunk, 0.1)]),
-        result([(document, chunk, 0.5)]),
+        result([
+            (document, chunk, 0.1, "semantic"),
+            (document, chunk, 0.5, "text"),
+        ]),
     ]
 
     with (
@@ -92,7 +94,7 @@ async def test_hybrid_search_returns_relevant_chunks():
     assert chunks[0]["source_section"] == "Backend"
     assert chunks[0]["score"] == 1.0
     embedding.assert_called_once_with(["Python framework"])
-    assert db.execute.await_count == 2
+    assert db.execute.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -102,10 +104,15 @@ async def test_rrf_combines_rankings_from_multiple_queries():
     second = make_chunk(2, 1, "FastAPI application framework")
     db = AsyncMock()
     db.execute.side_effect = [
-        result([(document, first, 0.1), (document, second, 0.2)]),
-        result([(document, second, 0.5)]),
-        result([(document, second, 0.1), (document, first, 0.2)]),
-        result([]),
+        result([
+            (document, first, 0.1, "semantic"),
+            (document, second, 0.2, "semantic"),
+            (document, second, 0.5, "text"),
+        ]),
+        result([
+            (document, second, 0.1, "semantic"),
+            (document, first, 0.2, "semantic"),
+        ]),
     ]
 
     with (
@@ -119,7 +126,7 @@ async def test_rrf_combines_rankings_from_multiple_queries():
     assert [item["chunk_id"] for item in chunks] == [2, 1]
     assert chunks[0]["score"] == 1.0
     assert 0 < chunks[1]["score"] < 1.0
-    assert db.execute.await_count == 4
+    assert db.execute.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -128,11 +135,10 @@ async def test_search_limits_chunks_per_document():
     db = AsyncMock()
     db.execute.side_effect = [
         result([
-            (document, make_chunk(1, 1, "First chunk"), 0.1),
-            (document, make_chunk(2, 1, "Second chunk"), 0.2),
-            (document, make_chunk(3, 1, "Third chunk"), 0.3),
+            (document, make_chunk(1, 1, "First chunk"), 0.1, "semantic"),
+            (document, make_chunk(2, 1, "Second chunk"), 0.2, "semantic"),
+            (document, make_chunk(3, 1, "Third chunk"), 0.3, "semantic"),
         ]),
-        result([]),
     ]
 
     with (
@@ -152,11 +158,10 @@ async def test_search_removes_near_duplicate_chunks():
     db = AsyncMock()
     db.execute.side_effect = [
         result([
-            (document, make_chunk(1, 1, "FastAPI is a Python framework."), 0.1),
-            (document, make_chunk(2, 1, "FastAPI is a Python framework."), 0.2),
-            (document, make_chunk(3, 1, "PostgreSQL stores relational data."), 0.3),
+            (document, make_chunk(1, 1, "FastAPI is a Python framework."), 0.1, "semantic"),
+            (document, make_chunk(2, 1, "FastAPI is a Python framework."), 0.2, "semantic"),
+            (document, make_chunk(3, 1, "PostgreSQL stores relational data."), 0.3, "semantic"),
         ]),
-        result([]),
     ]
 
     with (
@@ -176,8 +181,7 @@ async def test_search_filters_semantic_results_below_similarity_threshold():
     chunk = make_chunk(10, 1, "Unrelated content.")
     db = AsyncMock()
     db.execute.side_effect = [
-        result([(document, chunk, 0.56)]),  # cosine similarity = 0.44
-        result([]),  # no full-text match
+        result([(document, chunk, 0.56, "semantic")]),  # cosine similarity = 0.44
     ]
 
     with (
@@ -194,7 +198,7 @@ async def test_search_filters_semantic_results_below_similarity_threshold():
 @pytest.mark.asyncio
 async def test_search_returns_empty_when_no_retrievers_match():
     db = AsyncMock()
-    db.execute.side_effect = [result([]), result([])]
+    db.execute.side_effect = [result([])]
 
     with (
         patch("app.services.llm.expand_search_queries", new_callable=AsyncMock,
@@ -231,10 +235,8 @@ async def test_search_uses_original_query_even_when_expansion_omits_it():
     alternative_chunk = make_chunk(2, 1, "Alternative wording finds this policy.")
     db = AsyncMock()
     db.execute.side_effect = [
-        result([(document, original_chunk, 0.1)]),
-        result([]),
-        result([(document, alternative_chunk, 0.1)]),
-        result([]),
+        result([(document, original_chunk, 0.1, "semantic")]),
+        result([(document, alternative_chunk, 0.1, "semantic")]),
     ]
 
     with (
@@ -318,10 +320,9 @@ async def test_search_preserves_conflicting_chunks_with_and_without_negation():
     db = AsyncMock()
     db.execute.side_effect = [
         result([
-            (document, affirmative, 0.1),
-            (document, negative, 0.11),
+            (document, affirmative, 0.1, "semantic"),
+            (document, negative, 0.11, "semantic"),
         ]),
-        result([]),
     ]
 
     with (
@@ -350,10 +351,9 @@ async def test_search_preserves_identical_chunks_from_different_documents():
     db = AsyncMock()
     db.execute.side_effect = [
         result([
-            (first_document, make_chunk(1, 1, shared_text), 0.1),
-            (second_document, make_chunk(2, 2, shared_text), 0.11),
+            (first_document, make_chunk(1, 1, shared_text), 0.1, "semantic"),
+            (second_document, make_chunk(2, 2, shared_text), 0.11, "semantic"),
         ]),
-        result([]),
     ]
 
     with (
