@@ -771,3 +771,54 @@ async def test_update_rolls_back_document_and_old_chunks_when_embedding_fails(cl
     assert document.title == "Original atomic document"
     assert document.content == "Original content that must remain searchable."
     assert {chunk.id for chunk in remaining_chunks} == original_chunk_ids
+
+@pytest.mark.asyncio
+async def test_update_rolls_back_when_document_embedding_fails(client):
+    from sqlalchemy import select
+
+    from app.api.documents import update_document
+    from app.models.document import Document
+    from app.schemas.document import DocumentUpdate
+
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch(
+            "app.services.chunk_storage.generate_embeddings",
+            return_value=[[0.0] * 384],
+        ),
+    ):
+        created = await client.post(
+            "/documents/",
+            json={
+                "title": "Original embedding failure document",
+                "content": "Original content must stay committed.",
+            },
+        )
+
+    assert created.status_code == 201
+    document_id = created.json()["id"]
+
+    async with TestingSessionLocal() as db:
+        with patch(
+            "app.api.documents.generate_embedding",
+            side_effect=RuntimeError("document embedding failed"),
+        ):
+            with pytest.raises(RuntimeError, match="document embedding failed"):
+                await update_document(
+                    document_id=document_id,
+                    document_data=DocumentUpdate(
+                        title="Changed title",
+                        content="Changed content must not persist.",
+                    ),
+                    db=db,
+                )
+
+        # The same session must remain safe to use after the failed request.
+        await db.commit()
+
+    async with TestingSessionLocal() as db:
+        document = await db.get(Document, document_id)
+
+    assert document is not None
+    assert document.title == "Original embedding failure document"
+    assert document.content == "Original content must stay committed."
