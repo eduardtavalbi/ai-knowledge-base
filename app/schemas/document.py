@@ -9,7 +9,9 @@ class DocumentContentInput(BaseModel):
 
     @field_validator("content")
     @classmethod
-    def validate_content_size(cls, value: str) -> str:
+    def validate_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Document content cannot be empty")
         if len(value.encode("utf-8")) > MAX_DOCUMENT_CONTENT_BYTES:
             raise ValueError("Document content must not exceed 2 MB")
         return value
@@ -17,6 +19,11 @@ class DocumentContentInput(BaseModel):
 
 class DocumentCreate(DocumentContentInput):
     title: str = Field(min_length=1, max_length=255)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def normalize_title(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
 
 
 class DocumentResponse(BaseModel):
@@ -34,6 +41,11 @@ class SearchResultResponse(BaseModel):
 
 class DocumentUpdate(DocumentContentInput):
     title: str = Field(min_length=1, max_length=255)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def normalize_title(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
 
 
 class ChunkSearchResult(BaseModel):
