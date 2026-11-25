@@ -318,7 +318,17 @@ async def upload_document(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    http_request: Request = None,
 ):
+    await enforce_rate_limit(
+        db,
+        http_request,
+        "document_upload",
+        ip_limit=settings.document_upload_ip_limit,
+        identity=str(user.id),
+        identity_limit=settings.document_upload_identity_limit,
+        window_seconds=settings.document_upload_window_seconds,
+    )
     if not file.filename:
         raise HTTPException(
             status_code=400,
