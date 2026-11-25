@@ -104,6 +104,19 @@ def _clear_refresh_cookie(response: Response) -> None:
     )
 
 
+def _validate_browser_origin(request: Request) -> None:
+    origin = request.headers.get("origin")
+    if origin is None:
+        return
+    allowed_origins = {
+        value.strip().rstrip("/")
+        for value in settings.frontend_origins.split(",")
+        if value.strip()
+    }
+    if origin.rstrip("/") not in allowed_origins:
+        raise HTTPException(status_code=403, detail="Untrusted request origin")
+
+
 def _create_access_token(user_id: int, session_id: int) -> str:
     now = _now()
     expires = now + timedelta(minutes=ACCESS_TOKEN_MINUTES)
@@ -201,10 +214,12 @@ async def _create_session(user: User, db: AsyncSession) -> tuple[UserSession, st
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
+    request: Request,
     response: Response,
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
+    _validate_browser_origin(request)
     email = form.username.strip().casefold()
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalars().first()
@@ -230,6 +245,7 @@ async def refresh_session(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
+    _validate_browser_origin(request)
     refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token is missing")
@@ -290,6 +306,7 @@ async def logout(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
+    _validate_browser_origin(request)
     # A short-lived access token may already be expired when the user logs out.
     # The HttpOnly refresh cookie is an independent proof of the session.
     bearer = request.headers.get("Authorization", "")
