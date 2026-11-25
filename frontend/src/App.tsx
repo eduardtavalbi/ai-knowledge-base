@@ -203,6 +203,11 @@ function App() {
       const headers = new Headers(init?.headers)
       if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
       const response = await fetch(input, { ...init, headers })
+      // An expired/revoked access token ends the local session.
+      if (response.status === 401 && accessToken) {
+        logout()
+        return response
+      }
       // An HTTP error still proves that the API is reachable; only a failed
       // network request should switch the connection indicator to offline.
       if (requestId === apiRequestId.current) setApiStatus('online')
