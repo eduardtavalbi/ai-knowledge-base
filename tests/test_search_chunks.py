@@ -382,10 +382,16 @@ def test_multilingual_fts_uses_russian_and_english_dictionaries():
     )
 
     compiled_vector = str(
-        vector.compile(dialect=postgresql.dialect())
+        vector.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
     )
     compiled_query = str(
-        query.compile(dialect=postgresql.dialect())
+        query.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
     )
 
     assert "russian" in compiled_vector
