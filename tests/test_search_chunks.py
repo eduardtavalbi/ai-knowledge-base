@@ -3,7 +3,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.search import _negation_signature, search_document_chunks
+from app.services.search import (
+    _negation_signature,
+    _prepare_search_queries,
+    search_document_chunks,
+)
 
 
 @pytest.mark.parametrize(
@@ -200,3 +204,54 @@ async def test_search_returns_empty_when_no_retrievers_match():
         chunks = await search_document_chunks("unknown topic", db)
 
     assert chunks == []
+
+
+
+def test_prepare_search_queries_always_keeps_original_and_removes_duplicates():
+    queries = _prepare_search_queries(
+        "Original question",
+        [
+            "Alternative formulation",
+            "original question",
+            "Alternative formulation!",
+            "x" * 201,
+            "Another useful formulation",
+        ],
+        max_queries=3,
+    )
+
+    assert queries == ["Original question", "Alternative formulation", "Another useful formulation"]
+
+
+@pytest.mark.asyncio
+async def test_search_uses_original_query_even_when_expansion_omits_it():
+    document = make_document(1, "VPN policy")
+    original_chunk = make_chunk(1, 1, "Original query finds this policy.")
+    alternative_chunk = make_chunk(2, 1, "Alternative wording finds this policy.")
+    db = AsyncMock()
+    db.execute.side_effect = [
+        result([(document, original_chunk, 0.1)]),
+        result([]),
+        result([(document, alternative_chunk, 0.1)]),
+        result([]),
+    ]
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=["alternative wording"],
+        ),
+        patch(
+            "app.services.search.generate_embedding",
+            return_value=[0.1] * 384,
+        ) as embedding,
+    ):
+        chunks = await search_document_chunks("original question", db, limit=5)
+
+    assert [call.args[0] for call in embedding.call_args_list] == [
+        "original question",
+        "alternative wording",
+    ]
+    assert {chunk["chunk_id"] for chunk in chunks} == {1, 2}
+    assert db.execute.await_count == 4
