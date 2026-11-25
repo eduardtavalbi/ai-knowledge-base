@@ -202,7 +202,6 @@ function App() {
       })
       if (!response.ok) return null
       const data: { access_token: string } = await response.json()
-      setAccessToken(data.access_token)
       return data.access_token
     } catch {
       return null
@@ -212,7 +211,7 @@ function App() {
   useEffect(() => {
     let active = true
     void refreshAccessToken().then((token) => {
-      if (active && token) setApiStatus('online')
+      if (active && token) {\n        setAccessToken(token)\n        setApiStatus('online')\n      }
     })
     return () => { active = false }
   }, [refreshAccessToken])
