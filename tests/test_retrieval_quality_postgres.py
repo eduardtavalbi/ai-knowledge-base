@@ -124,7 +124,6 @@ async def test_hybrid_search_retrieves_relevant_postgres_chunks(postgres_session
 @pytest.mark.asyncio
 async def test_postgres_search_removes_duplicates_and_limits_chunks_per_document(
     postgres_session,
-user_id=1,
 ):
     handbook = Document(title="VPN security handbook", content="VPN access policies")
     postgres_session.add(handbook)
@@ -200,15 +199,14 @@ user_id=1,
 @pytest.mark.asyncio
 async def test_postgres_search_supports_russian_and_english_expansions(
     postgres_session,
-user_id=1,
 ):
     russian_doc = Document(
-     user_id=1,
+        user_id=1,
         title="Политика удалённой работы",
         content="Правила работы сотрудников из дома",
     )
     english_doc = Document(
-     user_id=1,
+        user_id=1,
         title="Remote work policy",
         content="Rules for employees working from home",
     )
@@ -257,12 +255,12 @@ user_id=1,
 @pytest.mark.asyncio
 async def test_postgres_search_keeps_conflicting_policy_sources(postgres_session):
     old_policy = Document(
-     user_id=1,
+        user_id=1,
         title="VPN policy 2024",
         content="External contractors do not need VPN access.",
     )
     current_policy = Document(
-     user_id=1,
+        user_id=1,
         title="VPN policy 2026",
         content="External contractors must use VPN access.",
     )
@@ -334,7 +332,7 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
     query,
 ):
     policy = Document(
-     user_id=1,
+        user_id=1,
         title=title,
         content=f"{positive_text} {negative_text}",
     )
@@ -384,15 +382,14 @@ async def test_postgres_search_preserves_near_identical_chunks_with_opposite_neg
 @pytest.mark.asyncio
 async def test_postgres_search_keeps_identical_chunks_from_separate_documents(
     postgres_session,
-user_id=1,
 ):
     first_doc = Document(
-     user_id=1,
+        user_id=1,
         title="Security handbook",
         content="VPN access requires multi-factor authentication.",
     )
     second_doc = Document(
-     user_id=1,
+        user_id=1,
         title="Remote access policy",
         content="VPN access requires multi-factor authentication.",
     )
