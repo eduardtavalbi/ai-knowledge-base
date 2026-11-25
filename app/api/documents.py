@@ -6,7 +6,7 @@ from app.api.auth import get_current_user
 from app.models.user import User
 from app.services.embeddings import generate_embedding
 from app.services.search import search_documents
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request, Response
 
 
 
@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 import logging
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.document import  Document
 from app.models.document_chunk import DocumentChunk
@@ -44,6 +45,7 @@ from app.services.llm import (
     GeminiEmptyResponseError,
 )
 from app.services.search import search_document_chunks
+from app.services.security import enforce_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -408,9 +410,20 @@ async def search_document_chunks_endpoint(
 @router.post("/ask", response_model=AskResponse)
 async def ask_question(
     request: AskRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    await enforce_rate_limit(
+        db,
+        http_request,
+        "ai_ask",
+        ip_limit=settings.ai_ask_ip_limit,
+        identity=str(user.id),
+        identity_limit=settings.ai_ask_identity_limit,
+        window_seconds=settings.ai_ask_window_seconds,
+    )
+
     question = request.question.strip()
 
     if not question:
