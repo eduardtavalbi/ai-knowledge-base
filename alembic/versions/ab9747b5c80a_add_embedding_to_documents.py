@@ -23,6 +23,9 @@ from pgvector.sqlalchemy import Vector
 
 
 def upgrade() -> None:
+    # The pgvector package provides the extension files, but each database
+    # must enable the extension before VECTOR columns can be created.
+    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
     op.add_column(
         "documents",
         sa.Column("embedding", Vector(384), nullable=True),

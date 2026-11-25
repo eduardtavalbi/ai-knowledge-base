@@ -1,9 +1,10 @@
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
-from google.genai.errors import ClientError, ServerError
+from app.services.llm import GeminiRateLimitError, GeminiUnavailableError
 
 from app.api.documents import ask_question
 from app.schemas.document import AskRequest
@@ -23,14 +24,13 @@ async def test_ask_returns_429_when_gemini_quota_exhausted(ask_request):
             "document_id": 1,
             "chunk_id": 1,
             "chunk_index": 0,
+            "source_page": None,
+            "source_section": None,
             "score": 0.9,
         }
     ]
 
-    error = ClientError(
-        429,
-        {"error": {"message": "Quota exceeded", "status": "RESOURCE_EXHAUSTED"}},
-    )
+    error = GeminiRateLimitError("Gemini rate limit reached")
 
     with (
         patch(
@@ -45,10 +45,10 @@ async def test_ask_returns_429_when_gemini_quota_exhausted(ask_request):
         ),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            await ask_question(ask_request, db=AsyncMock())
+            await ask_question(ask_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert exc_info.value.status_code == 429
-    assert "лимит запросов Gemini API" in exc_info.value.detail
+    assert exc_info.value.detail == "AI service rate limit reached. Please try again later."
 
 
 @pytest.mark.asyncio
@@ -60,14 +60,13 @@ async def test_ask_returns_503_when_gemini_unavailable(ask_request):
             "document_id": 1,
             "chunk_id": 1,
             "chunk_index": 0,
+            "source_page": None,
+            "source_section": None,
             "score": 0.9,
         }
     ]
 
-    error = ServerError(
-        503,
-        {"error": {"message": "Unavailable", "status": "UNAVAILABLE"}},
-    )
+    error = GeminiUnavailableError("Gemini server error")
 
     with (
         patch(
@@ -82,9 +81,12 @@ async def test_ask_returns_503_when_gemini_unavailable(ask_request):
         ),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            await ask_question(ask_request, db=AsyncMock())
+            await ask_question(ask_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == (
+        "AI service is temporarily unavailable. Please try again later."
+    )
 
 @pytest.mark.asyncio
 async def test_ask_returns_answer_with_sources(ask_request):
@@ -95,6 +97,8 @@ async def test_ask_returns_answer_with_sources(ask_request):
             "document_id": 1,
             "chunk_id": 1,
             "chunk_index": 0,
+            "source_page": None,
+            "source_section": None,
             "score": 0.9,
         }
     ]
@@ -108,12 +112,12 @@ async def test_ask_returns_answer_with_sources(ask_request):
         patch(
             "app.api.documents.generate_answer",
             new_callable=AsyncMock,
-            return_value="Python — язык программирования.",
+            return_value="Python — язык программирования. [Источник: 1]",
         ) as mock_generate,
     ):
-        response = await ask_question(ask_request, db=AsyncMock())
+        response = await ask_question(ask_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
-    assert response.answer == "Python — язык программирования."
+    assert response.answer == "Python — язык программирования. [Источник: 1]"
     assert [source.model_dump() for source in response.sources] == chunks
     mock_search.assert_awaited_once()
     mock_generate.assert_awaited_once()
@@ -132,7 +136,7 @@ async def test_ask_returns_message_when_no_chunks_found(ask_request):
             new_callable=AsyncMock,
         ) as mock_generate,
     ):
-        response = await ask_question(ask_request, db=AsyncMock())
+        response = await ask_question(ask_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert "не найдено" in response.answer
     assert response.sources == []

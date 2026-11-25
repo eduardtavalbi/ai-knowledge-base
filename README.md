@@ -7,11 +7,11 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 ## Features
 
 - **Document management** — create, view, update, and delete documents.
-- **File uploads** — import `.txt` and `.md` files with UTF-8 validation and a 2 MB size limit.
-- **Hybrid search** — combines title matching, PostgreSQL full-text search, and semantic search as a fallback.
-- **Semantic search** — represents text with multilingual embeddings and uses pgvector cosine distance to find relevant content.
+- **File uploads** — import `.txt`, `.md`, `.pdf`, and `.docx` files with a 2 MB size limit; retain PDF page numbers and document section headings for source citations.
+- **Hybrid retrieval** — combines semantic vector search and PostgreSQL full-text search over document chunks using Reciprocal Rank Fusion (RRF). Full-text retrieval combines PostgreSQL Russian and English dictionaries so both languages benefit from stemming; semantic retrieval is backed by a pgvector HNSW cosine index for scalable nearest-neighbor lookup.
+- **Multi-query retrieval** — Gemini generates alternative query formulations; retrieval safely falls back to the original query if expansion is unavailable. Results from all formulations are fused with RRF.
 - **RAG-based question answering** — retrieves relevant document chunks and passes them as context to Google Gemini.
-- **Source references** — returns the document chunks used to generate an answer.
+- **Source references** — returns the document chunks used to generate an answer, including PDF page numbers and DOCX/Markdown section headings when available.
 - **Relevance filtering** — filters out low-scoring semantic search results and limits duplicate or overly concentrated chunks.
 - **Asynchronous backend** — uses FastAPI and SQLAlchemy's async API.
 - **Database migrations** — manages schema changes with Alembic.
@@ -76,11 +76,12 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 
 1. A user submits a natural-language query.
 2. The application first checks for title matches.
-3. If no results are found, PostgreSQL full-text search is used.
-4. If that also returns no results, semantic search ranks document chunks by cosine distance.
-5. For question answering, the most relevant chunks are combined into context.
-6. Google Gemini generates an answer based on that context.
-7. The API returns the answer and its source chunks.
+3. Gemini optionally expands the query into a small set of alternative formulations.
+4. Each formulation retrieves document chunks through semantic vector search and PostgreSQL full-text search.
+5. Reciprocal Rank Fusion combines the ranked lists; duplicate chunks are removed and no document contributes more than two chunks.
+6. The most relevant chunks are combined into context.
+7. Google Gemini generates an answer based on that context.
+8. The API returns the answer and its source chunks.
 
 ## Getting Started
 
@@ -112,15 +113,18 @@ Configure the following variables in `.env`:
 ```dotenv
 APP_NAME=AI Knowledge Base API
 DEBUG=false
+AUTH_SECRET_KEY=GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
 DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5434/knowledge_base
 POSTGRES_DB=knowledge_base
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=YOUR_PASSWORD
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
-Use your own credentials. Never commit `.env` or API keys.
+Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys.
+
+If you are upgrading a database that already contains documents, set `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` before applying the ownership migration. The migration assigns all existing documents to this account; choose credentials you control. These variables are only needed for a database with existing documents.
 
 ### 3. Start the database
 
@@ -128,7 +132,7 @@ Use your own credentials. Never commit `.env` or API keys.
 docker compose up -d db
 ```
 
-The database is exposed on port `5434` on the host. The Compose configuration uses an external Docker volume named `ai_knowledge_base_vector_data`; make sure this volume exists before starting the database.
+The database is exposed on `127.0.0.1:5434` only. The API is also bound to `127.0.0.1:8000`; neither service is exposed to other machines on the network. Docker Compose creates the persistent volume `ai_knowledge_base_vector_data` automatically on first startup.
 
 ### 4. Set up the Python environment
 
@@ -143,7 +147,7 @@ pip install -r requirements.txt
 ```powershell
 python -m alembic upgrade head
 ```
-Alembic uses the database connection configured in alembic.ini. Make sure its URL points to your local PostgreSQL instance before running migrations.
+Alembic uses the same `DATABASE_URL` from your `.env` file as the application. The migration runner automatically switches to the synchronous PostgreSQL driver required by Alembic; no manual URL edit is needed.
 
 ### 6. Start the backend
 
@@ -183,12 +187,17 @@ python -m pytest -v
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/documents/` | List documents |
+| `POST` | `/auth/register` | Register an account |
+| `POST` | `/auth/login` | Obtain a bearer access token |
+| `GET` | `/auth/me` | Get the authenticated account |
+
+All `/documents` endpoints require `Authorization: Bearer <access_token>`. The frontend keeps the short-lived access token in memory for the current tab; refreshing the page requires signing in again.
+| `GET` | `/documents/` | List the current user's documents |
 | `POST` | `/documents/` | Create a document |
 | `GET` | `/documents/{id}` | Retrieve a document |
 | `PUT` | `/documents/{id}` | Update a document |
 | `DELETE` | `/documents/{id}` | Delete a document |
-| `POST` | `/documents/upload` | Upload a `.txt` or `.md` file |
+| `POST` | `/documents/upload` | Upload a `.txt`, `.md`, `.pdf`, or `.docx` file |
 | `GET` | `/documents/search?q=...` | Search documents |
 | `GET` | `/documents/search/chunks?q=...` | Search document chunks |
 | `POST` | `/documents/ask` | Answer a question using retrieved context |
@@ -217,10 +226,14 @@ ai-knowledge-base/
 
 ## Project Status
 
-Mindbase is an ongoing personal project focused on backend development, semantic retrieval, and AI-powered knowledge management.
+Mindbase is evolving into a multi-tenant commercial application. Each account owns a private document collection; document CRUD, deduplication, hybrid retrieval, and RAG context are scoped to the authenticated user.
 
 ## Security Notes
 
 - Keep API keys and credentials in local environment files.
 - Do not commit `.env`, database backups, or other sensitive files.
 - Use `.env.example` as a template with placeholder values only.
+- Document endpoints require a bearer access token. Passwords are hashed with Argon2id; JWT access tokens expire after 30 minutes.
+- Every document query and retrieval path is scoped by the authenticated owner. Identical content can exist in separate accounts without cross-account deduplication.
+- This is an initial authentication milestone, not yet a production launch approval: add email verification, abuse/rate limiting, password reset, refresh-token/session revocation, audit logging, and production secret management before public commercial deployment.
+- Docker Compose binds the API and database ports to loopback and requires an explicit `POSTGRES_PASSWORD`; do not replace this with a default or weak password.

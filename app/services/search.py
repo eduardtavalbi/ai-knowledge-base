@@ -1,3 +1,4 @@
+import asyncio
 from difflib import SequenceMatcher
 import re
 from sqlalchemy import func, select
@@ -5,7 +6,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
-from app.services.embeddings import generate_embedding
+from app.services.embeddings import generate_embedding, generate_embeddings
+
+
+_NEGATION_PATTERN = re.compile(
+    r"\b(?:not|no|never|without|cannot|can't|не|нет|ни|никогда|без)\b",
+    re.IGNORECASE,
+)
+
+
+def _negation_signature(text: str) -> frozenset[str]:
+    """Return explicit negation markers so contradictory text is not deduplicated."""
+    return frozenset(
+        match.group(0).lower()
+        for match in _NEGATION_PATTERN.finditer(text)
+    )
+
+
+def _multilingual_fts_expressions(text_expression, query: str):
+    """Build Russian + English PostgreSQL FTS expressions for mixed-language data."""
+    russian_vector = func.to_tsvector("russian", text_expression)
+    english_vector = func.to_tsvector("english", text_expression)
+    search_vector = russian_vector.op("||")(english_vector)
+
+    russian_query = func.plainto_tsquery("russian", query)
+    english_query = func.plainto_tsquery("english", query)
+    search_query = russian_query.op("||")(english_query)
+    return search_vector, search_query
 
 
 
@@ -14,6 +41,7 @@ from app.services.embeddings import generate_embedding
 async def search_documents(
     query: str,
     db: AsyncSession,
+    user_id: int,
     limit: int = 5,
 ) -> list[dict]:
     normalized_query = query.strip().lower()
@@ -43,6 +71,7 @@ async def search_documents(
     title_statement = (
         select(Document)
         .where(
+            Document.user_id == user_id,
             func.lower(Document.title).contains(
                 normalized_query,
                 autoescape=True,
@@ -61,16 +90,13 @@ async def search_documents(
         return documents
 
     # 2. Полнотекстовый поиск PostgreSQL с русской морфологией.
-    search_vector = func.to_tsvector(
-        "russian",
-        func.concat_ws(
-            " ",
-            Document.title,
-            Document.content,
-        ),
+    search_text = func.concat_ws(
+        " ",
+        Document.title,
+        Document.content,
     )
-    search_query = func.plainto_tsquery(
-        "russian",
+    search_vector, search_query = _multilingual_fts_expressions(
+        search_text,
         query,
     )
 
@@ -82,7 +108,7 @@ async def search_documents(
                 search_query,
             ).label("rank"),
         )
-        .where(search_vector.op("@@")(search_query))
+        .where(Document.user_id == user_id, search_vector.op("@@")(search_query))
         .order_by(
             func.ts_rank(
                 search_vector,
@@ -101,7 +127,8 @@ async def search_documents(
         return documents[:limit]
 
     # 3. Семантический поиск дополняет результаты.
-    query_embedding = generate_embedding(query)
+    # SentenceTransformer inference is synchronous; keep it off the event loop.
+    query_embedding = await asyncio.to_thread(generate_embedding, query)
 
     distance = DocumentChunk.embedding.cosine_distance(
         query_embedding
@@ -113,7 +140,7 @@ async def search_documents(
             DocumentChunk,
             DocumentChunk.document_id == Document.id,
         )
-        .where(DocumentChunk.embedding.is_not(None))
+        .where(Document.user_id == user_id, DocumentChunk.embedding.is_not(None))
         .order_by(distance)
         .limit(limit * 10)
     )
@@ -134,80 +161,179 @@ async def search_documents(
     return documents
 
 
+def _prepare_search_queries(
+    original_query: str,
+    expanded_queries: list[str],
+    max_queries: int = 3,
+) -> list[str]:
+    """Keep the user's exact query and add only distinct, bounded alternatives."""
+    original = original_query.strip()
+    if not original:
+        return []
+
+    queries = [original]
+    for candidate in expanded_queries:
+        if not isinstance(candidate, str):
+            continue
+        candidate = candidate.strip()
+        if not candidate or len(candidate) > 200:
+            continue
+
+        normalized = candidate.casefold()
+        is_duplicate = any(
+            normalized == existing.casefold()
+            or SequenceMatcher(
+                None, normalized, existing.casefold()
+            ).ratio() >= 0.85
+            for existing in queries
+        )
+        if not is_duplicate:
+            queries.append(candidate)
+        if len(queries) >= max(1, max_queries):
+            break
+
+    return queries[:max(1, max_queries)]
+
+
 async def search_document_chunks(
     query: str,
     db: AsyncSession,
+    user_id: int,
     limit: int = 5,
 ) -> list[dict]:
-    query_embedding = generate_embedding(query)
+    if not query.strip() or limit <= 0:
+        return []
 
-    distance = DocumentChunk.embedding.cosine_distance(
-        query_embedding
-    ).label("distance")
+    from app.services.llm import expand_search_queries
 
-    statement = (
-        select(Document, DocumentChunk, distance)
-        .join(
-            DocumentChunk,
-            DocumentChunk.document_id == Document.id,
+    expanded_queries = await expand_search_queries(query, max_queries=3)
+    queries = _prepare_search_queries(query, expanded_queries, max_queries=3)
+    reciprocal_rank_constant = 60
+    candidate_limit = limit * 10
+    scores: dict[int, float] = {}
+    chunks_by_id: dict[int, dict] = {}
+
+    def add_ranked_results(rows, *, semantic: bool = False) -> None:
+        for rank, (document, chunk, raw_score, *_) in enumerate(rows, start=1):
+            if semantic:
+                # Preserve the established minimum cosine-similarity threshold.
+                # pgvector returns cosine distance, so similarity = 1 - distance.
+                if raw_score is None or (1.0 - float(raw_score)) < 0.45:
+                    continue
+
+            chunks_by_id[chunk.id] = {
+                "document_id": document.id,
+                "title": document.title,
+                "chunk_id": chunk.id,
+                "chunk_index": chunk.chunk_index,
+                "content": chunk.content,
+                "source_page": chunk.source_page,
+                "source_section": chunk.source_section,
+            }
+            scores[chunk.id] = scores.get(chunk.id, 0.0) + (
+                1.0 / (reciprocal_rank_constant + rank)
+            )
+
+    # Encode all query variants in one worker-thread call. SentenceTransformer
+    # inference is synchronous/CPU-bound; batching avoids repeated model setup
+    # and keeps the async event loop responsive.
+    query_embeddings = await asyncio.to_thread(generate_embeddings, queries)
+    if len(query_embeddings) != len(queries):
+        raise RuntimeError("Embedding count does not match search query count")
+
+    for search_query, query_embedding in zip(queries, query_embeddings, strict=True):
+        distance = DocumentChunk.embedding.cosine_distance(
+            query_embedding
+        ).label("distance")
+
+        semantic_statement = (
+            select(Document, DocumentChunk, distance)
+            .join(
+                DocumentChunk,
+                DocumentChunk.document_id == Document.id,
+            )
+            .where(
+                Document.user_id == user_id,
+                DocumentChunk.embedding.is_not(None),
+                distance <= 0.55,
+            )
+            .order_by(distance)
+            .limit(candidate_limit)
         )
-        .where(DocumentChunk.embedding.is_not(None))
-        .order_by(distance)
-        .limit(limit * 10)
+        semantic_result = await db.execute(semantic_statement)
+        add_ranked_results(semantic_result.all(), semantic=True)
+
+        search_text = func.concat_ws(
+            " ",
+            Document.title,
+            DocumentChunk.content,
+        )
+        search_vector, search_tsquery = _multilingual_fts_expressions(
+            search_text,
+            search_query,
+        )
+        text_rank = func.ts_rank(search_vector, search_tsquery).label("rank")
+
+        text_statement = (
+            select(Document, DocumentChunk, text_rank)
+            .join(
+                DocumentChunk,
+                DocumentChunk.document_id == Document.id,
+            )
+            .where(Document.user_id == user_id, search_vector.op("@@")(search_tsquery))
+            .order_by(text_rank.desc())
+            .limit(candidate_limit)
+        )
+        text_result = await db.execute(text_statement)
+        add_ranked_results(text_result.all())
+
+    if not scores:
+        return []
+
+    max_score = max(scores.values())
+    ranked_chunks = sorted(
+        scores,
+        key=lambda chunk_id: scores[chunk_id],
+        reverse=True,
     )
 
-    result = await db.execute(statement)
-
-    chunks = []
+    chunks: list[dict] = []
     chunks_by_document: dict[int, list[str]] = {}
-    min_score = 0.45
     max_chunks_per_document = 2
     duplicate_threshold = 0.90
 
-    for document, chunk, cosine_distance in result.all():
-        score = round(1 - cosine_distance, 4)
-
-        if score < min_score:
-            continue
-
+    for chunk_id in ranked_chunks:
+        item = chunks_by_id[chunk_id]
         normalized_content = re.sub(
             r"\s+",
             " ",
-            chunk.content,
+            item["content"],
         ).strip().lower()
 
-        existing_chunks = chunks_by_document.get(
-            document.id,
-            [],
-        )
-
+        existing_chunks = chunks_by_document.get(item["document_id"], [])
         if len(existing_chunks) >= max_chunks_per_document:
             continue
 
+        current_negation = _negation_signature(normalized_content)
         is_duplicate = any(
-            SequenceMatcher(
+            current_negation == _negation_signature(existing_content)
+            and SequenceMatcher(
                 None,
                 normalized_content,
                 existing_content,
             ).ratio() >= duplicate_threshold
             for existing_content in existing_chunks
         )
-
         if is_duplicate:
             continue
 
-        chunks_by_document.setdefault(
-            document.id,
-            [],
-        ).append(normalized_content)
-
+        chunks_by_document.setdefault(item["document_id"], []).append(
+            normalized_content
+        )
         chunks.append({
-            "document_id": document.id,
-            "title": document.title,
-            "chunk_id": chunk.id,
-            "chunk_index": chunk.chunk_index,
-            "content": chunk.content,
-            "score": score,
+            **item,
+            # Relative fused score (0..1), not a cosine similarity.
+            "score": round(scores[chunk_id] / max_score, 4),
         })
 
         if len(chunks) >= limit:

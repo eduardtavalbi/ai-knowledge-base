@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   BrainCircuit,
   Search,
@@ -9,7 +9,6 @@ import {
   Upload,
   Sparkles,
   Database,
-  Settings,
   ChevronRight,
   Clock3,
   X,
@@ -32,6 +31,8 @@ type AskSource = {
   score: number
   chunk_id: number
   chunk_index: number
+  source_page?: number | null
+  source_section?: string | null
 }
 
 type AskResponse = {
@@ -39,62 +40,280 @@ type AskResponse = {
   sources: AskSource[]
 }
 
-const demoDocuments: DocumentItem[] = [
-  {
-    id: 1,
-    title: 'Изучение Python',
-    content:
-      'Python используется для разработки API, автоматизации задач и создания приложений.',
-  },
-  {
-    id: 2,
-    title: 'Python Learning Guide',
-    content:
-      'Python is a programming language used for backend development, automation, and artificial intelligence.',
-  },
-  {
-    id: 3,
-    title: 'План тренировок',
-    content:
-      'Регулярные силовые тренировки помогают развивать мышцы и увеличивать силу.',
-  },
-]
-
 function App() {
   const [query, setQuery] = useState('')
+  const [accessToken, setAccessToken] = useState<string | null>(null)
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
   const [documents, setDocuments] = useState<DocumentItem[]>([])
-  const [results, setResults] = useState<DocumentItem[]>(demoDocuments)
+  const [documentsLoading, setDocumentsLoading] = useState(true)
+  const [results, setResults] = useState<DocumentItem[]>([])
+  const [hasSearched, setHasSearched] = useState(false)
+  const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking')
   const [activePage, setActivePage] = useState<'search' | 'documents'>('search')
   const [selectedDocument, setSelectedDocument] = useState<DocumentItem | null>(null)
+  const [selectedDocumentLoading, setSelectedDocumentLoading] = useState(false)
+  const [selectedDocumentError, setSelectedDocumentError] = useState('')
   const [editingDocument, setEditingDocument] = useState<DocumentItem | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
   const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
+  const searchRequestId = useRef(0)
+  const apiRequestId = useRef(0)
+  const documentsRequestId = useRef(0)
+  const selectedDocumentRequestId = useRef(0)
+  const selectedDocumentRequestDocumentId = useRef<number | null>(null)
   const [aiAnswer, setAiAnswer] = useState('')
   const [answerSources, setAnswerSources] = useState<AskSource[]>([])
 
   useEffect(() => {
-    void loadDocuments()
+    if (!editingDocument && !selectedDocument) return
+
+    const dialog = window.document.querySelector<HTMLElement>(
+      '.modal-overlay [role="dialog"]',
+    )
+    if (!dialog) return
+
+    const previouslyFocused = window.document.activeElement as HTMLElement | null
+    const focusableSelector = [
+      'a[href]',
+      'button:not([disabled])',
+      'input:not([disabled])',
+      'textarea:not([disabled])',
+      'select:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(', ')
+    const getFocusableElements = () =>
+      Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector))
+        .filter((element) => element.getAttribute('aria-hidden') !== 'true')
+
+    const focusableElements = getFocusableElements()
+    const initialFocus = editingDocument
+      ? dialog.querySelector<HTMLElement>('#edit-title')
+      : focusableElements[0]
+    ;(initialFocus ?? dialog).focus()
+
+    function trapDialogFocus(event: KeyboardEvent) {
+      if (event.key !== 'Tab') return
+
+      const elements = getFocusableElements()
+      if (elements.length === 0) {
+        event.preventDefault()
+        dialog!.focus()
+        return
+      }
+
+      const first = elements[0]
+      const last = elements[elements.length - 1]
+      const activeElement = window.document.activeElement
+
+      // Keep keyboard focus inside the modal even if another script or
+      // browser interaction moved it outside the dialog.
+      if (!dialog!.contains(activeElement)) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+        return
+      }
+
+      if (event.shiftKey && activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    window.document.addEventListener('keydown', trapDialogFocus)
+    return () => {
+      window.document.removeEventListener('keydown', trapDialogFocus)
+      if (previouslyFocused?.isConnected) previouslyFocused.focus()
+    }
+  }, [editingDocument, selectedDocument])
+
+  const closeSelectedDocument = useCallback(() => {
+    selectedDocumentRequestId.current += 1
+    selectedDocumentRequestDocumentId.current = null
+    setSelectedDocument(null)
+    setSelectedDocumentLoading(false)
+    setSelectedDocumentError('')
   }, [])
 
-  async function loadDocuments() {
+
+  useEffect(() => {
+    if (!editingDocument && !selectedDocument) return
+
+    function handleModalKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+
+      if (editingDocument) {
+        if (!savingEdit) setEditingDocument(null)
+      } else {
+        closeSelectedDocument()
+      }
+    }
+
+    window.addEventListener('keydown', handleModalKeyDown)
+    return () => window.removeEventListener('keydown', handleModalKeyDown)
+  }, [editingDocument, selectedDocument, savingEdit, closeSelectedDocument])
+
+  async function openDocument(document: DocumentItem) {
+    const requestId = ++selectedDocumentRequestId.current
+    selectedDocumentRequestDocumentId.current = document.id
+    setSelectedDocument(document)
+    setSelectedDocumentLoading(true)
+    setSelectedDocumentError('')
+
     try {
-      const response = await fetch(`${API_URL}/documents/`)
+      const response = await requestApi(`${API_URL}/documents/${document.id}`)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const fullDocument: DocumentItem = await response.json()
+      if (requestId === selectedDocumentRequestId.current) {
+        setSelectedDocument(fullDocument)
+      }
+    } catch (error) {
+      if (requestId === selectedDocumentRequestId.current) {
+        setSelectedDocumentError(
+          error instanceof Error
+            ? `Не удалось загрузить документ: ${error.message}`
+            : 'Не удалось загрузить полный документ.',
+        )
+      }
+    } finally {
+      if (requestId === selectedDocumentRequestId.current) {
+        setSelectedDocumentLoading(false)
+      }
+    }
+  }
+
+  async function requestApi(
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> {
+    const requestId = ++apiRequestId.current
+    try {
+      const headers = new Headers(init?.headers)
+      if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+      const response = await fetch(input, { ...init, headers })
+      // An expired/revoked access token ends the local session.
+      if (response.status === 401 && accessToken) {
+        logout()
+        return response
+      }
+      // An HTTP error still proves that the API is reachable; only a failed
+      // network request should switch the connection indicator to offline.
+      if (requestId === apiRequestId.current) setApiStatus('online')
+      return response
+    } catch (error) {
+      if (requestId === apiRequestId.current) setApiStatus('offline')
+      throw error
+    }
+  }
+
+  async function loadDocuments() {
+    const requestId = ++documentsRequestId.current
+    setDocumentsLoading(true)
+    try {
+      const response = await requestApi(`${API_URL}/documents/`)
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
       }
 
       const data: DocumentItem[] = await response.json()
-      setDocuments(data)
+      if (requestId === documentsRequestId.current) {
+        setDocuments(data)
+      }
     } catch (error) {
+      if (requestId !== documentsRequestId.current) return
       console.error('Ошибка загрузки документов:', error)
-      setMessage('Не удалось загрузить список документов.')
+      setMessage(
+        error instanceof Error && error.message.startsWith('HTTP ')
+          ? 'API доступен, но не удалось загрузить список документов.'
+          : 'Не удалось загрузить список документов. Проверь подключение к API.',
+      )
+    } finally {
+      if (requestId === documentsRequestId.current) {
+        setDocumentsLoading(false)
+      }
     }
+  }
+
+  useEffect(() => {
+    if (!accessToken) return
+    const timeoutId = window.setTimeout(() => {
+      void loadDocuments()
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [accessToken])
+
+  async function submitAuth(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setAuthLoading(true)
+    setAuthError('')
+    try {
+      if (authMode === 'register') {
+        const registration = await fetch(`${API_URL}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: authEmail, password: authPassword }),
+        })
+        if (!registration.ok) {
+          const data = await registration.json().catch(() => null)
+          throw new Error(data?.detail || 'Не удалось создать аккаунт.')
+        }
+      }
+
+      const body = new URLSearchParams({
+        username: authEmail,
+        password: authPassword,
+      })
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => null)
+        throw new Error(data?.detail || 'Неверный email или пароль.')
+      }
+      const data: { access_token: string } = await response.json()
+      setAccessToken(data.access_token)
+      setAuthPassword('')
+      setApiStatus('online')
+    } catch (error) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось выполнить вход. Проверь подключение к серверу.',
+      )
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  function logout() {
+    searchRequestId.current += 1
+    documentsRequestId.current += 1
+    selectedDocumentRequestId.current += 1
+    setAccessToken(null)
+    setDocuments([])
+    setResults([])
+    setAiAnswer('')
+    setAnswerSources([])
+    setSelectedDocument(null)
+    setEditingDocument(null)
+    setHasSearched(false)
+    setMessage('')
+    setApiStatus('checking')
   }
 
   async function searchDocuments(event: React.FormEvent<HTMLFormElement>) {
@@ -105,14 +324,16 @@ function App() {
       return
     }
 
+    const requestId = ++searchRequestId.current
     setLoading(true)
+    setHasSearched(true)
     setMessage('')
     setAiAnswer('')
     setAnswerSources([])
     setResults([])
 
     try {
-      const response = await fetch(`${API_URL}/documents/ask`, {
+      const response = await requestApi(`${API_URL}/documents/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -128,22 +349,31 @@ function App() {
       }
 
       const data: AskResponse = await response.json()
+      if (requestId !== searchRequestId.current) return
 
+      const sources = data.sources ?? []
       setAiAnswer(data.answer)
-      setAnswerSources(data.sources ?? [])
+      setAnswerSources(sources)
 
-      setResults(
-        (data.sources ?? []).map((source) => ({
-          id: source.document_id,
-          title: source.title,
-          content: source.content,
-        })),
-      )
+      // Several retrieved chunks can belong to the same document. Keep every
+      // chunk in the citation list, but show each document only once.
+      const uniqueDocuments = new Map<number, DocumentItem>()
+      for (const source of sources) {
+        if (!uniqueDocuments.has(source.document_id)) {
+          uniqueDocuments.set(source.document_id, {
+            id: source.document_id,
+            title: source.title,
+            content: source.content,
+          })
+        }
+      }
+      setResults([...uniqueDocuments.values()])
 
       if (!data.answer && !data.sources?.length) {
         setMessage('Не удалось найти информацию по этому вопросу.')
       }
     } catch (error) {
+      if (requestId !== searchRequestId.current) return
       console.error('Ошибка запроса к ИИ:', error)
       setMessage(
         error instanceof Error
@@ -151,33 +381,71 @@ function App() {
           : 'Не удалось получить ответ от ИИ.',
       )
     } finally {
-      setLoading(false)
+      if (requestId === searchRequestId.current) setLoading(false)
     }
   }
   async function uploadFile(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
+    const input = event.currentTarget
+    const file = input.files?.[0]
     if (!file) return
+
+    const allowedExtensions = ['.pdf', '.docx', '.txt', '.md']
+    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+    const maxFileSize = 2 * 1024 * 1024
+
+    if (!allowedExtensions.includes(extension)) {
+      setMessage('Неподдерживаемый формат. Выбери PDF, DOCX, TXT или MD.')
+      input.value = ''
+      return
+    }
+
+    if (file.size > maxFileSize) {
+      setMessage('Файл слишком большой. Максимальный размер — 2 МБ.')
+      input.value = ''
+      return
+    }
 
     const formData = new FormData()
     formData.append('file', file)
+    setUploading(true)
+    setMessage('')
 
     try {
-      const response = await fetch(`${API_URL}/documents/upload`, {
+      const response = await requestApi(`${API_URL}/documents/upload`, {
         method: 'POST',
         body: formData,
       })
 
       if (!response.ok) {
-        throw new Error('Не удалось загрузить документ')
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          errorData?.detail || `Не удалось загрузить документ (HTTP ${response.status})`,
+        )
       }
 
       const document: DocumentItem = await response.json()
-      setDocuments((current) => [document, ...current])
-      setMessage(`Документ «${document.title}» загружен.`)
-    } catch {
-      setMessage('Ошибка загрузки. Проверь API и формат файла.')
+      documentsRequestId.current += 1
+      setDocumentsLoading(false)
+      setDocuments((current) => {
+        const alreadyListed = current.some((item) => item.id === document.id)
+        return alreadyListed
+          ? current.map((item) => item.id === document.id ? document : item)
+          : [document, ...current]
+      })
+      setMessage(
+        response.status === 200
+          ? `Документ «${document.title}» уже есть в базе знаний.`
+          : `Документ «${document.title}» загружен.`,
+      )
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось загрузить документ. Проверь подключение к API.',
+      )
     } finally {
-      event.target.value = ''
+      setUploading(false)
+      input.value = ''
     }
   }
   async function deleteDocument(document: DocumentItem) {
@@ -189,11 +457,13 @@ function App() {
 
   if (!confirmed) return
 
+  searchRequestId.current += 1
+  setLoading(false)
   setDeletingDocumentId(document.id)
   setMessage('')
 
   try {
-    const response = await fetch(
+    const response = await requestApi(
       `${API_URL}/documents/${document.id}`,
       { method: 'DELETE' },
     )
@@ -202,6 +472,8 @@ function App() {
       throw new Error(`HTTP ${response.status}`)
     }
 
+    documentsRequestId.current += 1
+    setDocumentsLoading(false)
     setDocuments((current) =>
       current.filter((item) => item.id !== document.id),
     )
@@ -209,10 +481,16 @@ function App() {
     setResults((current) =>
       current.filter((item) => item.id !== document.id),
     )
+    if (answerSources.some((source) => source.document_id === document.id)) {
+      setAiAnswer('')
+      setAnswerSources([])
+      setResults([])
+      setHasSearched(false)
+    }
 
-    setSelectedDocument((current) =>
-      current?.id === document.id ? null : current,
-    )
+    if (selectedDocumentRequestDocumentId.current === document.id) {
+      closeSelectedDocument()
+    }
 
     setMessage(`Документ «${document.title}» удалён.`)
   } catch (error) {
@@ -233,7 +511,7 @@ function App() {
     setSavingEdit(true)
 
     try {
-      const response = await fetch(
+      const response = await requestApi(
         `${API_URL}/documents/${editingDocument.id}`,
         {
           method: 'PUT',
@@ -257,6 +535,16 @@ function App() {
 
       const updatedDocument: DocumentItem = await response.json()
 
+      searchRequestId.current += 1
+      setLoading(false)
+      if (selectedDocumentRequestDocumentId.current === updatedDocument.id) {
+        selectedDocumentRequestId.current += 1
+        selectedDocumentRequestDocumentId.current = null
+        setSelectedDocumentLoading(false)
+        setSelectedDocumentError('')
+      }
+      documentsRequestId.current += 1
+      setDocumentsLoading(false)
       setDocuments((current) =>
         current.map((item) =>
           item.id === updatedDocument.id ? updatedDocument : item,
@@ -264,25 +552,11 @@ function App() {
       )
 
       setResults((current) =>
-        current.map((item) =>
-          item.id === updatedDocument.id ? updatedDocument : item,
-        ),
+        current.filter((item) => item.id !== updatedDocument.id),
       )
-
-      if (query.trim()) {
-        try {
-          const searchResponse = await fetch(
-            `${API_URL}/documents/search?q=${encodeURIComponent(query)}&limit=10`,
-          )
-
-          if (searchResponse.ok) {
-            const freshResults: DocumentItem[] = await searchResponse.json()
-            setResults(freshResults)
-          }
-        } catch (error) {
-          console.error('Ошибка обновления результатов поиска:', error)
-        }
-      }
+      setAiAnswer('')
+      setAnswerSources([])
+      setHasSearched(false)
 
       setSelectedDocument(updatedDocument)
       setEditingDocument(null)
@@ -298,6 +572,68 @@ function App() {
       setSavingEdit(false)
     }
   }
+  if (!accessToken) {
+    return (
+      <main className="auth-screen">
+        <section className="auth-card">
+          <div className="auth-brand">
+            <span className="brand-icon"><BrainCircuit size={25} /></span>
+            <span>Mindbase<span className="brand-dot">.</span></span>
+          </div>
+          <p className="auth-eyebrow">PERSONAL KNOWLEDGE WORKSPACE</p>
+          <h1>{authMode === 'login' ? 'С возвращением' : 'Создать аккаунт'}</h1>
+          <p className="auth-description">
+            {authMode === 'login'
+              ? 'Войдите, чтобы открыть свою приватную базу знаний.'
+              : 'Создайте аккаунт и начните собирать собственную базу знаний.'}
+          </p>
+          <form className="auth-form" onSubmit={submitAuth}>
+            <label htmlFor="auth-email">Email</label>
+            <input
+              id="auth-email"
+              type="email"
+              autoComplete="email"
+              value={authEmail}
+              onChange={(event) => setAuthEmail(event.target.value)}
+              required
+            />
+            <label htmlFor="auth-password">Пароль</label>
+            <input
+              id="auth-password"
+              type="password"
+              autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+              minLength={12}
+              value={authPassword}
+              onChange={(event) => setAuthPassword(event.target.value)}
+              required
+            />
+            {authError && <p className="auth-error" role="alert">{authError}</p>}
+            <button className="auth-submit" type="submit" disabled={authLoading}>
+              {authLoading
+                ? 'Подождите…'
+                : authMode === 'login' ? 'Войти' : 'Создать аккаунт'}
+            </button>
+          </form>
+          <button
+            className="auth-switch"
+            type="button"
+            onClick={() => {
+              setAuthMode((mode) => mode === 'login' ? 'register' : 'login')
+              setAuthError('')
+            }}
+          >
+            {authMode === 'login'
+              ? 'Нет аккаунта? Зарегистрироваться'
+              : 'Уже есть аккаунт? Войти'}
+          </button>
+          {authMode === 'register' && (
+            <p className="auth-password-hint">Пароль должен содержать не менее 12 символов.</p>
+          )}
+        </section>
+      </main>
+    )
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -310,6 +646,7 @@ function App() {
 
         <button
           className={`nav-item ${activePage === 'search' ? 'active' : ''}`}
+          aria-current={activePage === 'search' ? 'page' : undefined}
           onClick={() => setActivePage('search')}
         >
           <Search size={18} />
@@ -317,6 +654,7 @@ function App() {
         </button>
         <button
           className={`nav-item ${activePage === 'documents' ? 'active' : ''}`}
+          aria-current={activePage === 'documents' ? 'page' : undefined}
           onClick={() => {
             setActivePage('documents')
             void loadDocuments()
@@ -327,35 +665,24 @@ function App() {
           <span className="nav-count">{documents.length}</span>
         </button>
 
-        <div className="sidebar-divider" />
-
-        <div className="workspace-label">COLLECTIONS</div>
-        <button className="nav-item">
-          <FileText size={18} />
-          <span>Все документы</span>
-        </button>
 
         <div className="sidebar-bottom">
-          <div className="status-card">
-            <span className="status-indicator" />
+          <div className="status-card" role="status" aria-live="polite">
+            <span className={`status-indicator ${apiStatus}`} />
             <div>
               <strong>API подключение</strong>
-              <p>Локальный сервер</p>
+              <p>{apiStatus === 'checking' ? 'Проверка…' : apiStatus === 'online' ? 'Подключено' : 'Нет соединения'}</p>
             </div>
           </div>
-          <button className="nav-item">
-            <Settings size={18} />
-            <span>Настройки</span>
-          </button>
         </div>
       </aside>
 
       <main className="main-content">
         <header className="topbar">
           <div className="breadcrumb">
-            Workspace <ChevronRight size={15} /> <span>Поиск</span>
+            Workspace <ChevronRight size={15} /> <span>{activePage === 'search' ? 'Поиск' : 'Моя база знаний'}</span>
           </div>
-          <div className="avatar">Э</div>
+          <button className="logout-button" type="button" onClick={logout}>Выйти</button>
         </header>
 
         <section className="content-wrap">
@@ -373,30 +700,25 @@ function App() {
 
               <div className="results-list">
                 {documents.map((document) => (
-                  <article
-                    className="result-card"
-                    key={document.id}
-                    onClick={() => setSelectedDocument(document)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        setSelectedDocument(document)
-                      }
-                    }}
-                  >
-                    <div className="document-icon">
-                      <FileText size={21} />
-                    </div>
-                    <div className="result-info">
-                      <h3>{document.title}</h3>
-                      <p>{document.content}</p>
-                      <div className="result-meta">
-                        <span><Database size={13} /> Документ</span>
-                        <span><Clock3 size={13} /> В базе знаний</span>
+                  <article className="result-card" key={document.id}>
+                    <button
+                      type="button"
+                      className="result-open-button"
+                      onClick={() => void openDocument(document)}
+                      aria-label={`Открыть документ ${document.title}`}
+                    >
+                      <div className="document-icon">
+                        <FileText size={21} />
                       </div>
-                    </div>
+                      <div className="result-info">
+                        <h3>{document.title}</h3>
+                        <p>{document.content}</p>
+                        <div className="result-meta">
+                          <span><Database size={13} /> Документ</span>
+                          <span><Clock3 size={13} /> В базе знаний</span>
+                        </div>
+                      </div>
+                    </button>
                     <button
                       className="edit-button"
                       title="Редактировать документ"
@@ -434,9 +756,16 @@ function App() {
                   </article>
                 ))}
 
-                {documents.length === 0 && (
+                {documentsLoading && (
+                  <div className="empty-state" role="status">
+                    <LoaderCircle className="spin" size={18} /> Загрузка документов…
+                  </div>
+                )}
+                {!documentsLoading && documents.length === 0 && (
                   <div className="empty-state">
-                    Документы пока не загружены.
+                    {apiStatus === 'offline'
+                      ? 'Не удалось подключиться к серверу. Проверь API и повтори попытку.'
+                      : 'Документы пока не загружены.'}
                   </div>
                 )}
               </div>
@@ -471,7 +800,12 @@ function App() {
                   <X size={16} />
                 </button>
               )}
-              <button className="search-button" type="submit" disabled={loading}>
+              <button
+                className="search-button"
+                type="submit"
+                disabled={loading}
+                aria-label={loading ? 'Выполняется поиск' : 'Найти'}
+              >
                 {loading ? <LoaderCircle className="spin" size={17} /> : 'Найти'}
               </button>
             </form>
@@ -515,10 +849,18 @@ function App() {
 
                       <p>{source.content}</p>
 
-                      <span>
-                        Фрагмент документа · релевантность:{' '}
-                        {(source.score * 100).toFixed(1)}%
-                      </span>
+                      <div className="ai-source-meta">
+                        <span>Фрагмент документа</span>
+                        {source.source_page != null && (
+                          <span>Страница {source.source_page}</span>
+                        )}
+                        {source.source_section && (
+                          <span>Раздел: {source.source_section}</span>
+                        )}
+                        <span>
+                          Относительная оценка ранжирования: {(source.score * 100).toFixed(1)}%
+                        </span>
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -536,35 +878,39 @@ function App() {
               <span className="result-count">{results.length} документа</span>
             </div>
 
-            <div className="results-list">
+            <div className="results-list" aria-busy={loading}>
+              {loading && (
+                <div className="empty-state" role="status">
+                  <LoaderCircle className="spin" size={18} /> Ищу информацию в базе знаний…
+                </div>
+              )}
               {results.map((document) => (
-                <article
-                  className="result-card"
-                  key={document.id}
-                  onClick={() => setSelectedDocument(document)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      setSelectedDocument(document)
-                    }
-                  }}
-                >
-                  <div className="document-icon"><FileText size={21} /></div>
-                  <div className="result-info">
-                    <h3>{document.title}</h3>
-                    <p>{document.content}</p>
-                    <div className="result-meta">
-                      <span><Database size={13} /> Документ</span>
-                      <span><Clock3 size={13} /> В базе знаний</span>
+                <article className="result-card" key={document.id}>
+                  <button
+                    type="button"
+                    className="result-open-button"
+                    onClick={() => void openDocument(document)}
+                    aria-label={`Открыть документ ${document.title}`}
+                  >
+                    <div className="document-icon"><FileText size={21} /></div>
+                    <div className="result-info">
+                      <h3>{document.title}</h3>
+                      <p>{document.content}</p>
+                      <div className="result-meta">
+                        <span><Database size={13} /> Документ</span>
+                        <span><Clock3 size={13} /> В базе знаний</span>
+                      </div>
                     </div>
-                  </div>
-                  <ChevronRight className="result-arrow" size={19} />
+                    <ChevronRight className="result-arrow" size={19} />
+                  </button>
                 </article>
               ))}
-              {!results.length && !message && (
-                <div className="empty-state">Выполни поиск, чтобы увидеть результаты.</div>
+              {!loading && !results.length && !message && (
+                <div className="empty-state">
+                  {hasSearched
+                    ? 'По этому запросу документы не найдены.'
+                    : 'Выполни поиск, чтобы увидеть результаты.'}
+                </div>
               )}
             </div>
           </section>
@@ -575,27 +921,32 @@ function App() {
               <div className="upload-icon"><Upload size={20} /></div>
               <div>
                 <h3>Пополнить базу знаний</h3>
-                <p>Загрузи документ, чтобы он стал доступен для поиска.</p>
+                <p>Поддерживаются PDF, DOCX, TXT и Markdown · до 2 МБ.</p>
               </div>
             </div>
             <input
               ref={fileInput}
               type="file"
-              accept=".txt,.md"
+              accept=".pdf,.docx,.txt,.md"
               hidden
               onChange={uploadFile}
             />
             <button
               className="upload-button"
+              disabled={uploading}
               onClick={() => fileInput.current?.click()}
             >
-              <Plus size={17} /> Добавить документ
+              {uploading ? (
+                <><LoaderCircle className="spin" size={17} /> Загрузка…</>
+              ) : (
+                <><Plus size={17} /> Добавить документ</>
+              )}
             </button>
           </section>
           )}
 
           <footer className="footer">
-            <span><span className="status-indicator" /> Mindbase workspace</span>
+            <span><span className={`status-indicator ${apiStatus}`} /> Mindbase workspace</span>
             <span>Built with FastAPI &amp; vector search</span>
           </footer>
         </section>
@@ -603,11 +954,14 @@ function App() {
       {editingDocument && (
         <div
           className="modal-overlay"
-          onClick={() => setEditingDocument(null)}
+          onClick={() => {
+            if (!savingEdit) setEditingDocument(null)
+          }}
         >
           <section
             className="document-modal edit-modal"
             role="dialog"
+            tabIndex={-1}
             aria-modal="true"
             aria-labelledby="edit-document-title"
             onClick={(event) => event.stopPropagation()}
@@ -615,6 +969,7 @@ function App() {
             <button
               className="modal-close"
               onClick={() => setEditingDocument(null)}
+              disabled={savingEdit}
               aria-label="Закрыть редактор"
             >
               <X size={20} />
@@ -651,6 +1006,7 @@ function App() {
                   type="button"
                   className="edit-cancel"
                   onClick={() => setEditingDocument(null)}
+                  disabled={savingEdit}
                 >
                   Отмена
                 </button>
@@ -670,18 +1026,19 @@ function App() {
       {selectedDocument && (
         <div
           className="modal-overlay"
-          onClick={() => setSelectedDocument(null)}
+          onClick={closeSelectedDocument}
         >
           <section
             className="document-modal"
             role="dialog"
+            tabIndex={-1}
             aria-modal="true"
             aria-labelledby="document-modal-title"
             onClick={(event) => event.stopPropagation()}
           >
             <button
               className="modal-close"
-              onClick={() => setSelectedDocument(null)}
+              onClick={closeSelectedDocument}
               aria-label="Закрыть документ"
             >
               <X size={20} />
@@ -692,9 +1049,13 @@ function App() {
             </div>
 
             <h2 id="document-modal-title">{selectedDocument.title}</h2>
-            <p className="document-full-content">
-              {selectedDocument.content}
-            </p>
+            {selectedDocumentLoading ? (
+              <p className="document-full-content" role="status">Загрузка полного документа…</p>
+            ) : selectedDocumentError ? (
+              <p className="document-full-content" role="alert">{selectedDocumentError}</p>
+            ) : (
+              <p className="document-full-content">{selectedDocument.content}</p>
+            )}
           </section>
         </div>
       )}
