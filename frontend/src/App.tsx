@@ -61,6 +61,7 @@ function App() {
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const searchRequestId = useRef(0)
+  const documentsRequestId = useRef(0)
   const selectedDocumentRequestId = useRef(0)
   const selectedDocumentRequestDocumentId = useRef<number | null>(null)
   const [aiAnswer, setAiAnswer] = useState('')
@@ -203,6 +204,7 @@ function App() {
   }
 
   async function loadDocuments() {
+    const requestId = ++documentsRequestId.current
     setDocumentsLoading(true)
     try {
       const response = await requestApi(`${API_URL}/documents/`)
@@ -212,9 +214,12 @@ function App() {
       }
 
       const data: DocumentItem[] = await response.json()
-      setDocuments(data)
-      setApiStatus('online')
+      if (requestId === documentsRequestId.current) {
+        setDocuments(data)
+        setApiStatus('online')
+      }
     } catch (error) {
+      if (requestId !== documentsRequestId.current) return
       console.error('Ошибка загрузки документов:', error)
       setMessage(
         error instanceof Error && error.message.startsWith('HTTP ')
@@ -222,7 +227,9 @@ function App() {
           : 'Не удалось загрузить список документов. Проверь подключение к API.',
       )
     } finally {
-      setDocumentsLoading(false)
+      if (requestId === documentsRequestId.current) {
+        setDocumentsLoading(false)
+      }
     }
   }
 
@@ -334,6 +341,8 @@ function App() {
       }
 
       const document: DocumentItem = await response.json()
+      documentsRequestId.current += 1
+      setDocumentsLoading(false)
       setDocuments((current) => {
         const alreadyListed = current.some((item) => item.id === document.id)
         return alreadyListed
@@ -380,6 +389,8 @@ function App() {
       throw new Error(`HTTP ${response.status}`)
     }
 
+    documentsRequestId.current += 1
+    setDocumentsLoading(false)
     setDocuments((current) =>
       current.filter((item) => item.id !== document.id),
     )
@@ -449,6 +460,8 @@ function App() {
         setSelectedDocumentLoading(false)
         setSelectedDocumentError('')
       }
+      documentsRequestId.current += 1
+      setDocumentsLoading(false)
       setDocuments((current) =>
         current.map((item) =>
           item.id === updatedDocument.id ? updatedDocument : item,
