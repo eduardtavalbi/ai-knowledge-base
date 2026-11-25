@@ -23,6 +23,7 @@ def upgrade() -> None:
         sa.Column("window_started_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("request_count", sa.Integer(), nullable=False, server_default="0"),
     )
+    op.create_index("ix_rate_limit_buckets_window_started_at", "rate_limit_buckets", ["window_started_at"])
     op.create_table(
         "security_audit_events",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -49,4 +50,5 @@ def downgrade() -> None:
     op.drop_index("ix_security_audit_events_event_type_created_at", table_name="security_audit_events")
     op.drop_index("ix_security_audit_events_created_at", table_name="security_audit_events")
     op.drop_table("security_audit_events")
+    op.drop_index("ix_rate_limit_buckets_window_started_at", table_name="rate_limit_buckets")
     op.drop_table("rate_limit_buckets")
