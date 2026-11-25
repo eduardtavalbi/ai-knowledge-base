@@ -103,7 +103,7 @@ async def test_chunk_storage_keeps_metadata_when_combining_paragraphs():
 
     with patch(
         "app.services.chunk_storage.generate_embeddings",
-        return_value=[0.0] * 384,
+        return_value=[[0.0] * 384],
     ):
         await save_document_chunks(document, db, source_segments=source_segments)
 
