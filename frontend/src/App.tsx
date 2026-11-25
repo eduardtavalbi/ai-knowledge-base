@@ -354,19 +354,6 @@ function App() {
           <span className="nav-count">{documents.length}</span>
         </button>
 
-        <div className="sidebar-divider" />
-
-        <div className="workspace-label">COLLECTIONS</div>
-        <button
-          className={`nav-item ${activePage === 'documents' ? 'active' : ''}`}
-          onClick={() => {
-            setActivePage('documents')
-            void loadDocuments()
-          }}
-        >
-          <FileText size={18} />
-          <span>Все документы</span>
-        </button>
 
         <div className="sidebar-bottom">
           <div className="status-card">
