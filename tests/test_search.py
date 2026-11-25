@@ -55,6 +55,7 @@ async def test_search_documents_returns_unique_documents():
         documents = await search_documents(
             query="Python",
             db=db,
+            user_id=1,
             limit=5,
         )
 
@@ -104,6 +105,7 @@ async def test_search_documents_filters_low_scores():
         documents = await search_documents(
             query="Python",
             db=db,
+            user_id=1,
         )
 
     assert len(documents) == 1
@@ -147,6 +149,7 @@ async def test_search_documents_prioritizes_title_matches():
         documents = await search_documents(
             query="Python",
             db=db,
+            user_id=1,
             limit=1,
         )
 
