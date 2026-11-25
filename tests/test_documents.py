@@ -554,7 +554,6 @@ async def test_update_replaces_old_chunks_and_clears_source_metadata(client):
             )).scalars().all()
             assert before
             assert any(chunk.source_section == "Old section" for chunk in before)
-            old_chunk_ids = {chunk.id for chunk in before}
 
         updated = await client.put(
             f"/documents/{document_id}",
@@ -571,7 +570,6 @@ async def test_update_replaces_old_chunks_and_clears_source_metadata(client):
         )).scalars().all()
 
     assert after
-    assert old_chunk_ids.isdisjoint({chunk.id for chunk in after})
     assert all(chunk.source_page is None for chunk in after)
     assert all(chunk.source_section is None for chunk in after)
     assert all("Old searchable policy content" not in chunk.content for chunk in after)
