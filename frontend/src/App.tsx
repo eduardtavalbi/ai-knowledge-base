@@ -203,10 +203,18 @@ function App() {
 
     const pending = (async (): Promise<string | null> => {
       try {
-        const response = await fetch(`${API_URL}/auth/refresh`, {
+        let response = await fetch(`${API_URL}/auth/refresh`, {
           method: 'POST',
           credentials: 'include',
         })
+        // Another tab may have rotated the shared cookie just before this
+        // request arrived. Retry once with the browser's newly stored cookie.
+        if (response.status === 409) {
+          response = await fetch(`${API_URL}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'include',
+          })
+        }
         if (!response.ok) return null
         const data: { access_token: string } = await response.json()
         return data.access_token
