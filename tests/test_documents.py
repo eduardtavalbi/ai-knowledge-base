@@ -814,6 +814,7 @@ async def test_update_rolls_back_when_document_embedding_fails(client):
                         content="Changed content must not persist.",
                     ),
                     db=db,
+                    user=SimpleNamespace(id=1),
                 )
 
         # The same session must remain safe to use after the failed request.
