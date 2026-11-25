@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     auth_recovery_window_seconds: int = Field(default=3600, gt=0)
     auth_registration_ip_limit: int = Field(default=10, gt=0)
     auth_registration_window_seconds: int = Field(default=3600, gt=0)
+    ai_ask_ip_limit: int = Field(default=60, gt=0)
+    ai_ask_identity_limit: int = Field(default=20, gt=0)
+    ai_ask_window_seconds: int = Field(default=60, gt=0)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
