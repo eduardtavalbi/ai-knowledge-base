@@ -1,3 +1,4 @@
+import asyncio
 from difflib import SequenceMatcher
 import re
 from sqlalchemy import func, select
@@ -5,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
-from app.services.embeddings import generate_embedding
+from app.services.embeddings import generate_embedding, generate_embeddings
 
 
 _NEGATION_PATTERN = re.compile(
@@ -220,8 +221,14 @@ async def search_document_chunks(
                 1.0 / (reciprocal_rank_constant + rank)
             )
 
-    for search_query in queries:
-        query_embedding = generate_embedding(search_query)
+    # Encode all query variants in one worker-thread call. SentenceTransformer
+    # inference is synchronous/CPU-bound; batching avoids repeated model setup
+    # and keeps the async event loop responsive.
+    query_embeddings = await asyncio.to_thread(generate_embeddings, queries)
+    if len(query_embeddings) != len(queries):
+        raise RuntimeError("Embedding count does not match search query count")
+
+    for search_query, query_embedding in zip(queries, query_embeddings, strict=True):
         distance = DocumentChunk.embedding.cosine_distance(
             query_embedding
         ).label("distance")
