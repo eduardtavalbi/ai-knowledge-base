@@ -44,8 +44,8 @@ def test_production_configuration_accepts_secure_values():
         {"frontend_public_url": "http://app.example.com"},
         {"database_url": "postgresql+asyncpg://mindbase:CHANGE_ME@db:5432/mindbase"},
         {"database_url": "postgresql+asyncpg:///mindbase"},
-        {"smtp_host": "",},
-        {"email_verification_required": True},
+        {"smtp_host": ""},
+        {"smtp_from_email": ""},
         {
             "email_verification_required": True,
             "smtp_host": "smtp.example.com",
