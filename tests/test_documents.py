@@ -670,7 +670,7 @@ async def test_update_document_rejects_content_over_2mb_utf8(client):
 
 
 @pytest.mark.asyncio
-async def test_create_document_rolls_back_when_chunk_embedding_fails():
+async def test_create_document_rolls_back_when_chunk_embedding_fails(client):
     from sqlalchemy import select
 
     from app.api.documents import _create_document_if_new
