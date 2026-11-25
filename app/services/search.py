@@ -41,8 +41,8 @@ def _multilingual_fts_expressions(text_expression, query: str):
 async def search_documents(
     query: str,
     db: AsyncSession,
-    limit: int = 5,
     user_id: int,
+    limit: int = 5,
 ) -> list[dict]:
     normalized_query = query.strip().lower()
 
@@ -198,8 +198,8 @@ def _prepare_search_queries(
 async def search_document_chunks(
     query: str,
     db: AsyncSession,
-    limit: int = 5,
     user_id: int,
+    limit: int = 5,
 ) -> list[dict]:
     if not query.strip() or limit <= 0:
         return []
