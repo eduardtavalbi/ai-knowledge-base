@@ -431,6 +431,22 @@ async def reset_password(
     return response
 
 
+async def _create_session(user: User, db: AsyncSession) -> tuple[UserSession, str]:
+    refresh_token = _new_refresh_token()
+    token_hash = _hash_refresh_token(refresh_token)
+    session = UserSession(
+        user_id=user.id,
+        refresh_token_hash=token_hash,
+        expires_at=_now() + timedelta(days=REFRESH_TOKEN_DAYS),
+    )
+    db.add(session)
+    await db.flush()
+    db.add(SessionRefreshToken(session_id=session.id, token_hash=token_hash))
+    await db.commit()
+    await db.refresh(session)
+    return session, refresh_token
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(
     request: Request,
