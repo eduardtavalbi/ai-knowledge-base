@@ -82,7 +82,7 @@ async def test_hybrid_search_returns_relevant_chunks():
         patch("app.services.search.generate_embeddings",
               side_effect=lambda texts: [[0.1] * 384 for _ in texts]) as embedding,
     ):
-        chunks = await search_document_chunks("Python framework", db, limit=5)
+        chunks = await search_document_chunks("Python framework", db, user_id=1, limit=5)
 
     assert len(chunks) == 1
     assert chunks[0]["document_id"] == 1
@@ -114,7 +114,7 @@ async def test_rrf_combines_rankings_from_multiple_queries():
         patch("app.services.search.generate_embeddings",
               side_effect=lambda texts: [[0.1] * 384 for _ in texts]),
     ):
-        chunks = await search_document_chunks("backend", db, limit=5)
+        chunks = await search_document_chunks("backend", db, user_id=1, limit=5)
 
     assert [item["chunk_id"] for item in chunks] == [2, 1]
     assert chunks[0]["score"] == 1.0
@@ -141,7 +141,7 @@ async def test_search_limits_chunks_per_document():
         patch("app.services.search.generate_embeddings",
               side_effect=lambda texts: [[0.1] * 384 for _ in texts]),
     ):
-        chunks = await search_document_chunks("Python", db, limit=5)
+        chunks = await search_document_chunks("Python", db, user_id=1, limit=5)
 
     assert [item["chunk_id"] for item in chunks] == [1, 2]
 
@@ -165,7 +165,7 @@ async def test_search_removes_near_duplicate_chunks():
         patch("app.services.search.generate_embeddings",
               side_effect=lambda texts: [[0.1] * 384 for _ in texts]),
     ):
-        chunks = await search_document_chunks("Python", db, limit=5)
+        chunks = await search_document_chunks("Python", db, user_id=1, limit=5)
 
     assert [item["chunk_id"] for item in chunks] == [1, 3]
 
@@ -186,7 +186,7 @@ async def test_search_filters_semantic_results_below_similarity_threshold():
         patch("app.services.search.generate_embeddings",
               side_effect=lambda texts: [[0.1] * 384 for _ in texts]),
     ):
-        chunks = await search_document_chunks("Python", db)
+        chunks = await search_document_chunks("Python", db, user_id=1)
 
     assert chunks == []
 
@@ -202,7 +202,7 @@ async def test_search_returns_empty_when_no_retrievers_match():
         patch("app.services.search.generate_embeddings",
               side_effect=lambda texts: [[0.1] * 384 for _ in texts]),
     ):
-        chunks = await search_document_chunks("unknown topic", db)
+        chunks = await search_document_chunks("unknown topic", db, user_id=1)
 
     assert chunks == []
 
@@ -248,7 +248,7 @@ async def test_search_uses_original_query_even_when_expansion_omits_it():
             side_effect=lambda texts: [[0.1] * 384 for _ in texts],
         ) as embedding,
     ):
-        chunks = await search_document_chunks("original question", db, limit=5)
+        chunks = await search_document_chunks("original question", db, user_id=1, limit=5)
 
     embedding.assert_called_once_with([
         "original question",
@@ -278,7 +278,7 @@ async def test_search_rejects_incomplete_batched_embeddings_before_database_quer
             RuntimeError,
             match="Embedding count does not match search query count",
         ):
-            await search_document_chunks("original query", db, limit=5)
+            await search_document_chunks("original query", db, user_id=1, limit=5)
 
     embedding.assert_called_once_with(
         ["original query", "first alternative", "second alternative"]
@@ -299,7 +299,7 @@ async def test_search_skips_expansion_and_embeddings_for_blank_query():
             "app.services.search.generate_embeddings",
         ) as embedding,
     ):
-        chunks = await search_document_chunks("   ", db, limit=5)
+        chunks = await search_document_chunks("   ", db, user_id=1, limit=5)
 
     assert chunks == []
     expansion.assert_not_awaited()
@@ -335,7 +335,7 @@ async def test_search_preserves_conflicting_chunks_with_and_without_negation():
             side_effect=lambda texts: [[0.1] * 384 for _ in texts],
         ),
     ):
-        chunks = await search_document_chunks("VPN access", db, limit=5)
+        chunks = await search_document_chunks("VPN access", db, user_id=1, limit=5)
 
     assert [chunk["chunk_id"] for chunk in chunks] == [1, 2]
     assert "must use" in chunks[0]["content"]
@@ -367,7 +367,7 @@ async def test_search_preserves_identical_chunks_from_different_documents():
             side_effect=lambda texts: [[0.1] * 384 for _ in texts],
         ),
     ):
-        chunks = await search_document_chunks("VPN access", db, limit=5)
+        chunks = await search_document_chunks("VPN access", db, user_id=1, limit=5)
 
     assert [chunk["document_id"] for chunk in chunks] == [1, 2]
     assert [chunk["chunk_id"] for chunk in chunks] == [1, 2]
