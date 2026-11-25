@@ -731,6 +731,7 @@ function App() {
           <section
             className="document-modal edit-modal"
             role="dialog"
+            tabIndex={-1}
             aria-modal="true"
             aria-labelledby="edit-document-title"
             onClick={(event) => event.stopPropagation()}
@@ -800,6 +801,7 @@ function App() {
           <section
             className="document-modal"
             role="dialog"
+            tabIndex={-1}
             aria-modal="true"
             aria-labelledby="document-modal-title"
             onClick={(event) => event.stopPropagation()}
