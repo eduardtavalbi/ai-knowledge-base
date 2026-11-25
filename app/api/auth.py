@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 import re
 
@@ -94,7 +95,7 @@ async def register(
 ):
     user = User(
         email=request.email,
-        hashed_password=password_hasher.hash(request.password),
+        hashed_password=await asyncio.to_thread(password_hasher.hash, request.password),
     )
     db.add(user)
     try:
@@ -117,7 +118,11 @@ async def login(
     email = form.username.strip().casefold()
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalars().first()
-    if user is None or not password_hasher.verify(form.password, user.hashed_password):
+    if user is None or not await asyncio.to_thread(
+        password_hasher.verify,
+        form.password,
+        user.hashed_password,
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
