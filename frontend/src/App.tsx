@@ -718,7 +718,7 @@ function App() {
           <div className="breadcrumb">
             Workspace <ChevronRight size={15} /> <span>{activePage === 'search' ? 'Поиск' : 'Моя база знаний'}</span>
           </div>
-          <button className="logout-button" type="button" onClick={logout}>Выйти</button>
+          <button className="logout-button" type="button" onClick={() => logout()}>Выйти</button>
         </header>
 
         <section className="content-wrap">
