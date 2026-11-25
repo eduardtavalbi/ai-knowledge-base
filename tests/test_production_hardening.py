@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import Settings
@@ -69,7 +70,7 @@ async def test_audit_retention_deletes_only_expired_events():
             db, retention_days=90, now=now
         )
         remaining = list((await db.scalars(
-            __import__("sqlalchemy").select(SecurityAuditEvent)
+            select(SecurityAuditEvent)
         )).all())
     assert deleted == 1
     assert {event.event_type for event in remaining} == {"boundary", "new"}
@@ -86,3 +87,10 @@ async def test_audit_retention_requires_positive_days():
         with pytest.raises(ValueError):
             await purge_security_audit_events(db, retention_days=0)
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_readiness_endpoint_reports_database_ready(client):
+    response = await client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
