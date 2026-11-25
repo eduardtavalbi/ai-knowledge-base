@@ -304,3 +304,70 @@ async def test_search_skips_expansion_and_embeddings_for_blank_query():
     expansion.assert_not_awaited()
     embedding.assert_not_called()
     db.execute.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_search_preserves_conflicting_chunks_with_and_without_negation():
+    document = make_document(1, "VPN policy")
+    affirmative = make_chunk(
+        1, 1, "External contractors must use VPN access."
+    )
+    negative = make_chunk(
+        2, 1, "External contractors must not use VPN access."
+    )
+    db = AsyncMock()
+    db.execute.side_effect = [
+        result([
+            (document, affirmative, 0.1),
+            (document, negative, 0.11),
+        ]),
+        result([]),
+    ]
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=["VPN access"],
+        ),
+        patch(
+            "app.services.search.generate_embeddings",
+            side_effect=lambda texts: [[0.1] * 384 for _ in texts],
+        ),
+    ):
+        chunks = await search_document_chunks("VPN access", db, limit=5)
+
+    assert [chunk["chunk_id"] for chunk in chunks] == [1, 2]
+    assert "must use" in chunks[0]["content"]
+    assert "must not use" in chunks[1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_search_preserves_identical_chunks_from_different_documents():
+    first_document = make_document(1, "VPN policy — department A")
+    second_document = make_document(2, "VPN policy — department B")
+    shared_text = "External contractors must use VPN access."
+    db = AsyncMock()
+    db.execute.side_effect = [
+        result([
+            (first_document, make_chunk(1, 1, shared_text), 0.1),
+            (second_document, make_chunk(2, 2, shared_text), 0.11),
+        ]),
+        result([]),
+    ]
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=["VPN access"],
+        ),
+        patch(
+            "app.services.search.generate_embeddings",
+            side_effect=lambda texts: [[0.1] * 384 for _ in texts],
+        ),
+    ):
+        chunks = await search_document_chunks("VPN access", db, limit=5)
+
+    assert [chunk["document_id"] for chunk in chunks] == [1, 2]
+    assert [chunk["chunk_id"] for chunk in chunks] == [1, 2]
+
