@@ -42,6 +42,7 @@ async def search_documents(
     query: str,
     db: AsyncSession,
     limit: int = 5,
+    user_id: int,
 ) -> list[dict]:
     normalized_query = query.strip().lower()
 
@@ -70,6 +71,7 @@ async def search_documents(
     title_statement = (
         select(Document)
         .where(
+            Document.user_id == user_id,
             func.lower(Document.title).contains(
                 normalized_query,
                 autoescape=True,
@@ -106,7 +108,7 @@ async def search_documents(
                 search_query,
             ).label("rank"),
         )
-        .where(search_vector.op("@@")(search_query))
+        .where(Document.user_id == user_id, search_vector.op("@@")(search_query))
         .order_by(
             func.ts_rank(
                 search_vector,
@@ -138,7 +140,7 @@ async def search_documents(
             DocumentChunk,
             DocumentChunk.document_id == Document.id,
         )
-        .where(DocumentChunk.embedding.is_not(None))
+        .where(Document.user_id == user_id, DocumentChunk.embedding.is_not(None))
         .order_by(distance)
         .limit(limit * 10)
     )
@@ -197,6 +199,7 @@ async def search_document_chunks(
     query: str,
     db: AsyncSession,
     limit: int = 5,
+    user_id: int,
 ) -> list[dict]:
     if not query.strip() or limit <= 0:
         return []
@@ -250,6 +253,7 @@ async def search_document_chunks(
                 DocumentChunk.document_id == Document.id,
             )
             .where(
+                Document.user_id == user_id,
                 DocumentChunk.embedding.is_not(None),
                 distance <= 0.55,
             )
@@ -276,7 +280,7 @@ async def search_document_chunks(
                 DocumentChunk,
                 DocumentChunk.document_id == Document.id,
             )
-            .where(search_vector.op("@@")(search_tsquery))
+            .where(Document.user_id == user_id, search_vector.op("@@")(search_tsquery))
             .order_by(text_rank.desc())
             .limit(candidate_limit)
         )
