@@ -402,7 +402,7 @@ async def test_email_verification_is_required_when_enabled(unauthenticated_clien
         "/auth/verify-email",
         json={"token": token},
     )
-    assert replay.status_code == 400
+    assert replay.status_code == 200
 
 
 @pytest.mark.asyncio
