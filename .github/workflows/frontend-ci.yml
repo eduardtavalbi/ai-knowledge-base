@@ -40,3 +40,17 @@ jobs:
 
       - name: Build frontend container image
         run: docker build --build-arg VITE_API_URL=http://localhost:8000 -t mindbase-frontend:ci .
+
+      - name: Smoke test frontend container
+        run: |
+          docker run --detach --name mindbase-frontend-smoke --publish 127.0.0.1:8080:80 mindbase-frontend:ci
+          trap 'docker rm --force mindbase-frontend-smoke >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 15); do
+            if curl --fail --silent http://127.0.0.1:8080/ -o /tmp/mindbase-index.html; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q 'id="root"' /tmp/mindbase-index.html
+          curl --fail --silent http://127.0.0.1:8080/documents/42 -o /tmp/mindbase-route.html
+          grep -q 'id="root"' /tmp/mindbase-route.html
