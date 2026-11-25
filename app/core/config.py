@@ -5,8 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "AI Knowledge Base API"
     debug: bool = False
+    # Placeholder only: configure DATABASE_URL in .env before connecting.
     database_url: str = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5434/knowledge_base"
+        "postgresql+asyncpg://postgres:CHANGE_ME@localhost:5434/knowledge_base"
     )
 
     deepseek_api_key: str = ""
