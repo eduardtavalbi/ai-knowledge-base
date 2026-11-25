@@ -20,6 +20,7 @@ from app.models.user import User
 from app.models.user_session import UserSession, SessionRefreshToken
 from app.models.account_action_token import AccountActionToken
 from app.services.email import send_account_email
+from app.services.security import enforce_rate_limit, record_security_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -265,8 +266,14 @@ async def get_current_user(
 @router.post("/register", response_model=UserResponse, status_code=201)
 async def register(
     request: RegisterRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        db, http_request, "register",
+        ip_limit=settings.auth_registration_ip_limit,
+        window_seconds=settings.auth_registration_window_seconds,
+    )
     verification_required = settings.email_verification_required
     if verification_required and not _email_delivery_configured():
         raise HTTPException(
@@ -290,6 +297,8 @@ async def register(
             detail="An account with this email already exists",
         ) from exc
 
+    await record_security_event(db, "account_registered", http_request, email=user.email, user_id=user.id)
+
     if verification_required:
         token = await _create_action_token(
             user, db, "email_verification",
@@ -308,8 +317,14 @@ async def register(
 @router.post("/verify-email", response_model=UserResponse)
 async def verify_email(
     request: VerifyEmailRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        db, http_request, "verify_email",
+        ip_limit=settings.auth_recovery_ip_limit,
+        window_seconds=settings.auth_recovery_window_seconds,
+    )
     result = await db.execute(
         select(AccountActionToken)
         .where(
@@ -333,14 +348,24 @@ async def verify_email(
     user.email_verified = True
     await db.commit()
     await db.refresh(user)
+    await record_security_event(db, "email_verified", http_request, email=user.email, user_id=user.id)
     return user
 
 
 @router.post("/resend-verification", status_code=202)
 async def resend_verification(
     request: EmailTokenRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        db, http_request, "resend_verification",
+        ip_limit=settings.auth_recovery_ip_limit,
+        identity=request.email,
+        identity_limit=settings.auth_recovery_identity_limit,
+        window_seconds=settings.auth_recovery_window_seconds,
+    )
+    await record_security_event(db, "verification_email_requested", http_request, email=request.email)
     if not settings.email_verification_required:
         return {"message": "If the account requires verification, an email will be sent."}
     if not _email_delivery_configured():
@@ -362,8 +387,17 @@ async def resend_verification(
 @router.post("/forgot-password", status_code=202)
 async def forgot_password(
     request: EmailTokenRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        db, http_request, "forgot_password",
+        ip_limit=settings.auth_recovery_ip_limit,
+        identity=request.email,
+        identity_limit=settings.auth_recovery_identity_limit,
+        window_seconds=settings.auth_recovery_window_seconds,
+    )
+    await record_security_event(db, "password_reset_requested", http_request, email=request.email)
     if not _email_delivery_configured():
         raise HTTPException(status_code=503, detail="Email delivery is not configured")
     result = await db.execute(select(User).where(User.email == request.email))
@@ -384,8 +418,14 @@ async def forgot_password(
 async def reset_password(
     request: PasswordResetRequest,
     response: Response,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        db, http_request, "reset_password",
+        ip_limit=settings.auth_recovery_ip_limit,
+        window_seconds=settings.auth_recovery_window_seconds,
+    )
     result = await db.execute(
         select(AccountActionToken)
         .where(
@@ -427,6 +467,7 @@ async def reset_password(
         session.revoked_at = _now()
 
     await db.commit()
+    await record_security_event(db, "password_reset_completed", http_request, email=user.email, user_id=user.id)
     response.status_code = 204
     return response
 
@@ -456,6 +497,13 @@ async def login(
 ):
     _validate_browser_origin(request)
     email = form.username.strip().casefold()
+    await enforce_rate_limit(
+        db, request, "login",
+        ip_limit=settings.auth_login_ip_limit,
+        identity=email,
+        identity_limit=settings.auth_login_identity_limit,
+        window_seconds=settings.auth_login_window_seconds,
+    )
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalars().first()
     if user is None or not await asyncio.to_thread(
@@ -463,6 +511,7 @@ async def login(
         form.password,
         user.hashed_password,
     ):
+        await record_security_event(db, "login_failed", request, email=email, user_id=user.id if user else None)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -470,12 +519,14 @@ async def login(
         )
 
     if settings.email_verification_required and not user.email_verified:
+        await record_security_event(db, "login_unverified_email", request, email=email, user_id=user.id)
         raise HTTPException(
             status_code=403,
             detail="Please verify your email address before signing in",
         )
 
     session, refresh_token = await _create_session(user, db)
+    await record_security_event(db, "login_succeeded", request, email=email, user_id=user.id)
     _set_refresh_cookie(response, refresh_token)
     _set_no_store_headers(response)
     return _token_response(user.id, session.id)
@@ -612,6 +663,7 @@ async def logout(
             await db.commit()
 
     _clear_refresh_cookie(response)
+    await record_security_event(db, "logout", request, user_id=token_user_id)
     response.status_code = 204
     return response
 
