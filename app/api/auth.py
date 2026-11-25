@@ -6,7 +6,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pwdlib import PasswordHash
@@ -162,6 +162,15 @@ async def _create_action_token(
     ))
     await db.commit()
     return raw_token
+
+
+async def _deliver_action_email_safely(user: User, token: str, purpose: str) -> None:
+    try:
+        await _send_action_email(user, token, purpose)
+    except Exception:
+        # Recovery endpoints return the same response regardless of whether
+        # an account exists; SMTP latency/failure must not reveal that fact.
+        logger.warning("Account recovery email delivery failed")
 
 
 async def _send_action_email(user: User, token: str, purpose: str) -> None:
@@ -375,6 +384,7 @@ async def verify_email(
 async def resend_verification(
     request: EmailTokenRequest,
     http_request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     await enforce_rate_limit(
@@ -402,10 +412,9 @@ async def resend_verification(
             user, db, "email_verification",
             timedelta(hours=EMAIL_VERIFICATION_TOKEN_HOURS),
         )
-        try:
-            await _send_action_email(user, token, "email_verification")
-        except Exception:
-            logger.warning("Verification email delivery failed")
+        background_tasks.add_task(
+            _deliver_action_email_safely, user, token, "email_verification"
+        )
     return {"message": "If the account requires verification, an email will be sent."}
 
 
@@ -413,6 +422,7 @@ async def resend_verification(
 async def forgot_password(
     request: EmailTokenRequest,
     http_request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     await enforce_rate_limit(
@@ -438,10 +448,9 @@ async def forgot_password(
             user, db, "password_reset",
             timedelta(minutes=PASSWORD_RESET_TOKEN_MINUTES),
         )
-        try:
-            await _send_action_email(user, token, "password_reset")
-        except Exception:
-            logger.warning("Password reset email delivery failed")
+        background_tasks.add_task(
+            _deliver_action_email_safely, user, token, "password_reset"
+        )
     return {"message": "If an account with this email exists, a password reset email will be sent."}
 
 
