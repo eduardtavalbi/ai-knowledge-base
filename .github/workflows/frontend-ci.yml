@@ -37,3 +37,6 @@ jobs:
 
       - name: Lint frontend
         run: npm run lint
+
+      - name: Build frontend container image
+        run: docker build --build-arg VITE_API_URL=http://localhost:8000 -t mindbase-frontend:ci .
