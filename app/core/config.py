@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     ai_ask_ip_limit: int = Field(default=60, gt=0)
     ai_ask_identity_limit: int = Field(default=20, gt=0)
     ai_ask_window_seconds: int = Field(default=60, gt=0)
+    ai_search_ip_limit: int = Field(default=120, gt=0)
+    ai_search_identity_limit: int = Field(default=60, gt=0)
+    ai_search_window_seconds: int = Field(default=60, gt=0)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
