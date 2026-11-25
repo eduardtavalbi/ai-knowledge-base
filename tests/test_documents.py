@@ -865,3 +865,66 @@ async def test_create_rejects_whitespace_only_title(client):
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_upload_docx_rejects_excessive_uncompressed_package_size(client):
+    import zipfile
+    from io import BytesIO
+
+    from app.services.document_extraction import MAX_DOCX_UNCOMPRESSED_BYTES
+
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "word/document.xml",
+            b"0" * (MAX_DOCX_UNCOMPRESSED_BYTES + 1),
+        )
+
+    response = await client.post(
+        "/documents/upload",
+        files={
+            "file": (
+                "expanded.docx",
+                buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == (
+        "DOCX package expands beyond the 20 MB processing limit"
+    )
+
+
+def test_pdf_extraction_rejects_excessive_page_count():
+    from unittest.mock import patch
+
+    from app.services.document_extraction import (
+        DocumentTooLargeError,
+        MAX_PDF_PAGES,
+        _extract_pdf_segments,
+    )
+
+    class FakeReader:
+        is_encrypted = False
+        pages = [object()] * (MAX_PDF_PAGES + 1)
+
+    with patch(
+        "app.services.document_extraction.PdfReader",
+        return_value=FakeReader(),
+    ):
+        with pytest.raises(DocumentTooLargeError, match="cannot contain more than"):
+            _extract_pdf_segments(b"%PDF-test")
+
+
+def test_extracted_text_size_limit_is_measured_in_utf8_bytes():
+    from app.services.document_extraction import (
+        DocumentTooLargeError,
+        MAX_EXTRACTED_TEXT_BYTES,
+        _validate_extracted_text_size,
+    )
+
+    with pytest.raises(DocumentTooLargeError, match="2 MB limit"):
+        _validate_extracted_text_size("я" * (MAX_EXTRACTED_TEXT_BYTES // 2 + 1))
