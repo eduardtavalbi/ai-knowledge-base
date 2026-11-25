@@ -27,6 +27,7 @@ from app.services.document_extraction import (
     UnsupportedDocumentFormatError,
     InvalidDocumentFileError,
     EmptyDocumentError,
+    DocumentTooLargeError,
     SourceSegment,
 )
 from app.services.llm import (
@@ -324,6 +325,11 @@ async def upload_document(
     except EmptyDocumentError as exc:
         raise HTTPException(
             status_code=400,
+            detail=str(exc),
+        ) from exc
+    except DocumentTooLargeError as exc:
+        raise HTTPException(
+            status_code=413,
             detail=str(exc),
         ) from exc
 
