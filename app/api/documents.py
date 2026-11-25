@@ -145,10 +145,18 @@ async def get_documents(
 @router.get("/search", response_model=list[SearchResultResponse])
 async def search_documents_endpoint(
     q: str = Query(..., min_length=1, max_length=2000),
+    http_request: Request = None,
     db: AsyncSession = Depends(get_db),
     limit: int = 5,
     user: User = Depends(get_current_user),
 ):
+    await enforce_rate_limit(
+        db, http_request, "ai_search",
+        ip_limit=settings.ai_search_ip_limit,
+        identity=str(user.id),
+        identity_limit=settings.ai_search_identity_limit,
+        window_seconds=settings.ai_search_window_seconds,
+    )
     if not q.strip():
         raise HTTPException(
             status_code=400,
@@ -384,10 +392,18 @@ async def create_document(
 @router.get("/search/chunks", response_model=list[ChunkSearchResult])
 async def search_document_chunks_endpoint(
     q: str = Query(..., min_length=1, max_length=2000),
+    http_request: Request = None,
     db: AsyncSession = Depends(get_db),
     limit: int = 5,
     user: User = Depends(get_current_user),
 ):
+    await enforce_rate_limit(
+        db, http_request, "ai_search",
+        ip_limit=settings.ai_search_ip_limit,
+        identity=str(user.id),
+        identity_limit=settings.ai_search_identity_limit,
+        window_seconds=settings.ai_search_window_seconds,
+    )
     if not q.strip():
         raise HTTPException(
             status_code=400,
