@@ -381,23 +381,13 @@ def test_multilingual_fts_uses_russian_and_english_dictionaries():
         "доступ access",
     )
 
-    compiled_vector = str(
-        vector.compile(
-            dialect=postgresql.dialect(),
-            compile_kwargs={"literal_binds": True},
-        )
-    )
-    compiled_query = str(
-        query.compile(
-            dialect=postgresql.dialect(),
-            compile_kwargs={"literal_binds": True},
-        )
-    )
+    compiled_vector = vector.compile(dialect=postgresql.dialect())
+    compiled_query = query.compile(dialect=postgresql.dialect())
 
-    assert "russian" in compiled_vector
-    assert "english" in compiled_vector
-    assert "russian" in compiled_query
-    assert "english" in compiled_query
-    assert "to_tsvector" in compiled_vector
-    assert "plainto_tsquery" in compiled_query
+    vector_configs = set(compiled_vector.params.values())
+    query_configs = set(compiled_query.params.values())
 
+    assert {"russian", "english"} <= vector_configs
+    assert {"russian", "english"} <= query_configs
+    assert "to_tsvector" in str(compiled_vector)
+    assert "plainto_tsquery" in str(compiled_query)
