@@ -25,6 +25,8 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-knowledge_base}
       APP_NAME: ${APP_NAME:-AI Knowledge Base API}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SECURITY_AUDIT_RETENTION_DAYS: ${SECURITY_AUDIT_RETENTION_DAYS:-90}
       DEBUG: ${DEBUG:-false}
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?Set AUTH_SECRET_KEY in .env}
       REFRESH_TOKEN_COOKIE_SECURE: ${REFRESH_TOKEN_COOKIE_SECURE:-false}
@@ -69,7 +71,7 @@ services:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"
       interval: 10s
       timeout: 5s
       retries: 5
