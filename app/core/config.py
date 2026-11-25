@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     ai_search_ip_limit: int = Field(default=120, gt=0)
     ai_search_identity_limit: int = Field(default=60, gt=0)
     ai_search_window_seconds: int = Field(default=60, gt=0)
+    document_upload_ip_limit: int = Field(default=20, gt=0)
+    document_upload_identity_limit: int = Field(default=10, gt=0)
+    document_upload_window_seconds: int = Field(default=3600, gt=0)
     smtp_host: str = ""
     smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_username: str = ""
