@@ -255,3 +255,52 @@ async def test_search_uses_original_query_even_when_expansion_omits_it():
     ])
     assert {chunk["chunk_id"] for chunk in chunks} == {1, 2}
     assert db.execute.await_count == 4
+
+
+
+@pytest.mark.asyncio
+async def test_search_rejects_incomplete_batched_embeddings_before_database_queries():
+    db = AsyncMock()
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=["first alternative", "second alternative"],
+        ),
+        patch(
+            "app.services.search.generate_embeddings",
+            return_value=[[0.1] * 384, [0.2] * 384],
+        ) as embedding,
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match="Embedding count does not match search query count",
+        ):
+            await search_document_chunks("original query", db, limit=5)
+
+    embedding.assert_called_once_with(
+        ["original query", "first alternative"]
+    )
+    db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_search_skips_expansion_and_embeddings_for_blank_query():
+    db = AsyncMock()
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+        ) as expansion,
+        patch(
+            "app.services.search.generate_embeddings",
+        ) as embedding,
+    ):
+        chunks = await search_document_chunks("   ", db, limit=5)
+
+    assert chunks == []
+    expansion.assert_not_awaited()
+    embedding.assert_not_called()
+    db.execute.assert_not_awaited()
