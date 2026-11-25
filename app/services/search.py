@@ -256,13 +256,14 @@ async def search_document_chunks(
                 literal("semantic").label("retriever"),
                 distance.label("sort_score"),
             )
-            .join(
-                Document,
-                DocumentChunk.document_id == Document.id,
-            )
             .where(
-                Document.user_id == user_id,
                 DocumentChunk.embedding.is_not(None),
+                select(Document.id)
+                .where(
+                    Document.id == DocumentChunk.document_id,
+                    Document.user_id == user_id,
+                )
+                .exists(),
                 distance <= 0.55,
             )
             .order_by(distance)
