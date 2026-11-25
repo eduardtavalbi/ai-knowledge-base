@@ -18,7 +18,7 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 - **Account security** — Argon2id password hashing, short-lived access tokens, HttpOnly refresh cookies, refresh-token rotation and replay detection.
 - **Session management** — revoke the current session on logout and list/revoke other active sessions.
 - **Account recovery** — optional email verification, one-time password-reset links, and session revocation after password changes.
-- **Abuse protection** — PostgreSQL-backed rate limits for authentication and recovery endpoints, shared across API workers.
+- **Abuse protection** — PostgreSQL-backed rate limits for authentication, recovery, and AI question-generation endpoints, shared across API workers.
 - **Security audit trail** — records authentication and account-security events without storing passwords or raw action tokens.
 - **Automated tests** — tests the API and application behavior with pytest.
 - **Docker Compose** — provides a containerized development environment for the backend and database.
@@ -123,6 +123,9 @@ REFRESH_TOKEN_COOKIE_SECURE=false
 FRONTEND_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 FRONTEND_PUBLIC_URL=http://localhost:5173
 EMAIL_VERIFICATION_REQUIRED=false
+AI_ASK_IP_LIMIT=60
+AI_ASK_IDENTITY_LIMIT=20
+AI_ASK_WINDOW_SECONDS=60
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USERNAME=
@@ -143,7 +146,7 @@ DEEPSEEK_MODEL=deepseek-chat
 
 Use your own credentials. Set a cryptographically random `AUTH_SECRET_KEY` of at least 32 characters and a non-default database password. Never commit `.env` or API keys. For local HTTP development, keep `REFRESH_TOKEN_COOKIE_SECURE=false`; set it to `true` behind HTTPS in production. Set `FRONTEND_ORIGINS` to the exact comma-separated origins serving the browser app (without trailing slashes). To require verified email addresses, set `EMAIL_VERIFICATION_REQUIRED=true` and configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`, and any required SMTP credentials; set `FRONTEND_PUBLIC_URL` to the public frontend URL.
 
-Authentication abuse-protection defaults are 20 login attempts per IP and 8 per email/IP pair per 15 minutes; recovery endpoints allow 20 requests per IP and 4 per email/IP pair per hour; registration allows 10 attempts per IP per hour. Tune these values with the `AUTH_*` variables above. Counters are stored in PostgreSQL, so limits are shared across API workers. The API uses the direct client address and does not trust arbitrary forwarded-IP headers; configure trusted proxy handling at the deployment edge before placing it behind a reverse proxy. Security audit events store keyed digests of email, IP, and user-agent values rather than raw values, and never store passwords or action tokens. Rate-limit buckets older than 24 hours are cleaned up during authentication requests; define an operational retention policy for audit events before public deployment.
+Authentication abuse-protection defaults are 20 login attempts per IP and 8 per email/IP pair per 15 minutes; recovery endpoints allow 20 requests per IP and 4 per email/IP pair per hour; registration allows 10 attempts per IP per hour. Tune these values with the `AUTH_*` variables above. AI question generation is separately limited to 60 requests per IP and 20 requests per authenticated user/IP pair per minute by default; tune it with `AI_ASK_IP_LIMIT`, `AI_ASK_IDENTITY_LIMIT`, and `AI_ASK_WINDOW_SECONDS`. Counters are stored in PostgreSQL, so limits are shared across API workers. The API uses the direct client address and does not trust arbitrary forwarded-IP headers; configure trusted proxy handling at the deployment edge before placing it behind a reverse proxy. Security audit events store keyed digests of email, IP, and user-agent values rather than raw values, and never store passwords or action tokens. Rate-limit buckets older than 24 hours are cleaned up during authentication requests; define an operational retention policy for audit events before public deployment.
 
 If you are upgrading a database that already contains documents, set `MIGRATION_OWNER_EMAIL` and `MIGRATION_OWNER_PASSWORD` before applying the ownership migration. The migration assigns all existing documents to this account; choose credentials you control. These variables are only needed for a database with existing documents.
 
