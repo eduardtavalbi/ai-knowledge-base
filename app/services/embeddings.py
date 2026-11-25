@@ -1,14 +1,20 @@
-from sentence_transformers import SentenceTransformer
+from functools import lru_cache
 
 
-model = SentenceTransformer(
-    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-)
+MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+
+@lru_cache(maxsize=1)
+def _get_model():
+    """Load the embedding model only when an embedding is actually requested."""
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(MODEL_NAME)
 
 
 def generate_embedding(text: str) -> list[float]:
     """Generate one embedding for a search query or document-level vector."""
-    vector = model.encode(text)
+    vector = _get_model().encode(text)
     return vector.tolist()
 
 
@@ -17,7 +23,7 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
 
-    vectors = model.encode(
+    vectors = _get_model().encode(
         texts,
         batch_size=32,
         show_progress_bar=False,
