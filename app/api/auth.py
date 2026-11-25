@@ -140,6 +140,11 @@ def _token_response(user_id: int, session_id: int) -> TokenResponse:
     )
 
 
+def _set_no_store_headers(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
@@ -237,6 +242,7 @@ async def login(
 
     session, refresh_token = await _create_session(user, db)
     _set_refresh_cookie(response, refresh_token)
+    _set_no_store_headers(response)
     return _token_response(user.id, session.id)
 
 
@@ -309,6 +315,7 @@ async def refresh_session(
     db.add(SessionRefreshToken(session_id=session.id, token_hash=replacement_hash))
     await db.commit()
     _set_refresh_cookie(response, replacement)
+    _set_no_store_headers(response)
     return _token_response(user.id, session.id)
 
 
