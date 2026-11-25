@@ -706,12 +706,21 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
         ))
         # Known-account recovery events are linked internally for complete
         # account deletion; unknown-email events remain pseudonymous.
-        session.add(SecurityAuditEvent(
-            event_type="password_reset_requested",
-            user_id=user.id,
-            email_hash=hash_security_identifier(user.email.casefold()),
-            ip_hash="b" * 64,
-        ))
+        session.add_all([
+            SecurityAuditEvent(
+                event_type="password_reset_requested",
+                user_id=user.id,
+                email_hash=hash_security_identifier(user.email.casefold()),
+                ip_hash="b" * 64,
+            ),
+            # Legacy recovery events were pseudonymous even for known users.
+            SecurityAuditEvent(
+                event_type="password_reset_requested",
+                user_id=None,
+                email_hash=hash_security_identifier(user.email.casefold()),
+                ip_hash="c" * 64,
+            ),
+        ])
         await session.commit()
 
     deleted = await unauthenticated_client.request(
