@@ -736,3 +736,4 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
         assert (await session.execute(select(func.count()).select_from(UserSession))).scalar_one() == 0
         assert (await session.execute(select(func.count()).select_from(SessionRefreshToken))).scalar_one() == 0
         assert (await session.execute(select(func.count()).select_from(AccountActionToken))).scalar_one() == 0
+        assert (await session.execute(select(func.count()).select_from(SecurityAuditEvent))).scalar_one() == 0
