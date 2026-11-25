@@ -190,6 +190,8 @@ python -m pytest -v
 | `POST` | `/auth/register` | Register an account |
 | `POST` | `/auth/login` | Obtain a bearer access token |
 | `GET` | `/auth/me` | Get the authenticated account |
+
+All `/documents` endpoints require `Authorization: Bearer <access_token>`. The frontend keeps the short-lived access token in memory for the current tab; refreshing the page requires signing in again.
 | `GET` | `/documents/` | List the current user's documents |
 | `POST` | `/documents/` | Create a document |
 | `GET` | `/documents/{id}` | Retrieve a document |
