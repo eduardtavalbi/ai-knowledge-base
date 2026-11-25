@@ -62,6 +62,7 @@ function App() {
   const fileInput = useRef<HTMLInputElement>(null)
   const searchRequestId = useRef(0)
   const selectedDocumentRequestId = useRef(0)
+  const selectedDocumentRequestDocumentId = useRef<number | null>(null)
   const [aiAnswer, setAiAnswer] = useState('')
   const [answerSources, setAnswerSources] = useState<AskSource[]>([])
 
@@ -153,6 +154,7 @@ function App() {
 
   function closeSelectedDocument() {
     selectedDocumentRequestId.current += 1
+    selectedDocumentRequestDocumentId.current = null
     setSelectedDocument(null)
     setSelectedDocumentLoading(false)
     setSelectedDocumentError('')
@@ -160,6 +162,7 @@ function App() {
 
   async function openDocument(document: DocumentItem) {
     const requestId = ++selectedDocumentRequestId.current
+    selectedDocumentRequestDocumentId.current = document.id
     setSelectedDocument(document)
     setSelectedDocumentLoading(true)
     setSelectedDocumentError('')
@@ -388,9 +391,9 @@ function App() {
       setHasSearched(false)
     }
 
-    setSelectedDocument((current) =>
-      current?.id === document.id ? null : current,
-    )
+    if (selectedDocumentRequestDocumentId.current === document.id) {
+      closeSelectedDocument()
+    }
 
     setMessage(`Документ «${document.title}» удалён.`)
   } catch (error) {
@@ -437,6 +440,12 @@ function App() {
 
       searchRequestId.current += 1
       setLoading(false)
+      if (selectedDocumentRequestDocumentId.current === updatedDocument.id) {
+        selectedDocumentRequestId.current += 1
+        selectedDocumentRequestDocumentId.current = null
+        setSelectedDocumentLoading(false)
+        setSelectedDocumentError('')
+      }
       setDocuments((current) =>
         current.map((item) =>
           item.id === updatedDocument.id ? updatedDocument : item,
