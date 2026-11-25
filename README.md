@@ -18,6 +18,8 @@ Built with **FastAPI, PostgreSQL, pgvector, React, and TypeScript**, the project
 - **Account security** — Argon2id password hashing, short-lived access tokens, HttpOnly refresh cookies, refresh-token rotation and replay detection.
 - **Session management** — revoke the current session on logout and list/revoke other active sessions.
 - **Account recovery** — optional email verification, one-time password-reset links, and session revocation after password changes.
+- **Abuse protection** — PostgreSQL-backed rate limits for authentication and recovery endpoints, shared across API workers.
+- **Security audit trail** — records authentication and account-security events without storing passwords or raw action tokens.
 - **Automated tests** — tests the API and application behavior with pytest.
 - **Docker Compose** — provides a containerized development environment for the backend and database.
 
@@ -257,5 +259,5 @@ Mindbase is evolving into a multi-tenant commercial application. Each account ow
 - Use `.env.example` as a template with placeholder values only.
 - Document endpoints require a bearer access token. Passwords are hashed with Argon2id; JWT access tokens expire after 30 minutes.
 - Every document query and retrieval path is scoped by the authenticated owner. Identical content can exist in separate accounts without cross-account deduplication.
-- Session refresh, token rotation/replay detection, logout, per-session revocation, email verification, and password reset are implemented. Before public commercial deployment, still add abuse/rate limiting, audit logging, and production secret management.
+- Session refresh, token rotation/replay detection, logout, per-session revocation, email verification, and password reset are implemented. Before public commercial deployment, still add production secret management, monitoring/alerting, and operational retention policies for security logs.
 - Docker Compose binds the API and database ports to loopback and requires an explicit `POSTGRES_PASSWORD`; do not replace this with a default or weak password.
