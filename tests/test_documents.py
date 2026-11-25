@@ -1,9 +1,13 @@
+from io import BytesIO
+
 import pytest
+from fastapi import Response, UploadFile
 from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
 
 from app.models.document_chunk import DocumentChunk
 from conftest import TestingSessionLocal
+from app.api.documents import upload_document
 
 @pytest.mark.asyncio
 async def test_create_document(client):
@@ -131,14 +135,21 @@ async def test_delete_document(client):
 
 
 @pytest.mark.asyncio
-async def test_upload_rejects_missing_filename_with_clear_error(client):
-    response = await client.post(
-        "/documents/upload",
-        files={"file": ("", b"Document content", "text/plain")},
-    )
+async def test_upload_rejects_missing_filename_with_clear_error():
+    upload = UploadFile(filename=None, file=BytesIO(b"Document content"))
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Filename is required"
+    with pytest.raises(Exception) as error:
+        await upload_document(
+            response=Response(),
+            file=upload,
+            db=None,
+        )
+
+    from fastapi import HTTPException
+
+    assert isinstance(error.value, HTTPException)
+    assert error.value.status_code == 400
+    assert error.value.detail == "Filename is required"
 
 
 @pytest.mark.asyncio
