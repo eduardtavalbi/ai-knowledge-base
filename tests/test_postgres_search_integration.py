@@ -61,16 +61,15 @@ async def postgres_session():
 @pytest.mark.asyncio
 async def test_postgres_hybrid_search_combines_vector_and_full_text(
     postgres_session,
-user_id=1,
 ):
     vector_match = Document(
-     user_id=1,
+        user_id=1,
         title="Runtime architecture",
         content="Python service runtime",
         content_sha256="a" * 64,
     )
     text_match = Document(
-     user_id=1,
+        user_id=1,
         title="Operations handbook",
         content="Python service deployment guide",
         content_sha256="b" * 64,
@@ -128,7 +127,6 @@ user_id=1,
 @pytest.mark.asyncio
 async def test_postgres_hybrid_search_filters_weak_vector_matches(
     postgres_session,
-user_id=1,
 ):
     # Keep the test independent if a PostgreSQL schema contains leftover rows.
     await postgres_session.execute(delete(DocumentChunk))
@@ -136,7 +134,7 @@ user_id=1,
     await postgres_session.commit()
 
     document = Document(
-     user_id=1,
+        user_id=1,
         title="Unrelated material",
         content="A document without the requested terms",
         content_sha256="c" * 64,
