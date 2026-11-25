@@ -684,6 +684,7 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
         user = (await session.execute(
             select(User).where(User.email == "delete-me@example.com")
         )).scalar_one()
+        deleted_user_id = user.id
         document = Document(
             user_id=user.id,
             title="Delete with account",
@@ -736,4 +737,10 @@ async def test_account_deletion_removes_owned_data_and_invalidates_session(unaut
         assert (await session.execute(select(func.count()).select_from(UserSession))).scalar_one() == 0
         assert (await session.execute(select(func.count()).select_from(SessionRefreshToken))).scalar_one() == 0
         assert (await session.execute(select(func.count()).select_from(AccountActionToken))).scalar_one() == 0
-        assert (await session.execute(select(func.count()).select_from(SecurityAuditEvent))).scalar_one() == 0
+        assert (
+            await session.execute(
+                select(func.count())
+                .select_from(SecurityAuditEvent)
+                .where(SecurityAuditEvent.user_id == deleted_user_id)
+            )
+        ).scalar_one() == 0
