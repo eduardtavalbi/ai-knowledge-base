@@ -178,7 +178,12 @@ async def delete_documents(
     document_id: int,
     db: AsyncSession = Depends(get_db)
 ):
-    document = await db.get(Document, document_id)
+    result = await db.execute(
+        select(Document)
+        .where(Document.id == document_id)
+        .with_for_update()
+    )
+    document = result.scalars().first()
 
     if document is None:
         raise HTTPException(
@@ -186,13 +191,17 @@ async def delete_documents(
             detail="Document not found"
         )
 
-    # Delete chunks explicitly instead of relying only on database-level
-    # ON DELETE CASCADE, which may not be enabled by every test/development DB.
-    await db.execute(
-        delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
-    )
-    await db.delete(document)
-    await db.commit()
+    try:
+        # Serialize deletion with updates and keep the document/chunk removal
+        # in one transaction.
+        await db.execute(
+            delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
+        )
+        await db.delete(document)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
     return {"message":"Document deleted successfully"}
 
@@ -204,7 +213,14 @@ async def update_document(
     document_data: DocumentUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    document = await db.get(Document, document_id)
+    # Lock the row before checking the new fingerprint or replacing chunks.
+    # Concurrent updates/deletes for this document then serialize in PostgreSQL.
+    result = await db.execute(
+        select(Document)
+        .where(Document.id == document_id)
+        .with_for_update()
+    )
+    document = result.scalars().first()
 
     if document is None:
         raise HTTPException(
