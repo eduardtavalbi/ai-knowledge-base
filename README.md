@@ -129,7 +129,7 @@ Use your own credentials. Never commit `.env` or API keys.
 docker compose up -d db
 ```
 
-The database is exposed on port `5434` on the host. The Compose configuration uses an external Docker volume named `ai_knowledge_base_vector_data`; make sure this volume exists before starting the database.
+The database is exposed on port `5434` on the host. Docker Compose creates the persistent volume `ai_knowledge_base_vector_data` automatically on first startup.
 
 ### 4. Set up the Python environment
 
@@ -144,7 +144,7 @@ pip install -r requirements.txt
 ```powershell
 python -m alembic upgrade head
 ```
-Alembic uses the database connection configured in alembic.ini. Make sure its URL points to your local PostgreSQL instance before running migrations.
+Alembic uses the same `DATABASE_URL` from your `.env` file as the application. The migration runner automatically switches to the synchronous PostgreSQL driver required by Alembic; no manual URL edit is needed.
 
 ### 6. Start the backend
 
