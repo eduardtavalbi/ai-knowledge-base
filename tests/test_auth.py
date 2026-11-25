@@ -1,3 +1,4 @@
+import jwt
 import pytest
 
 from app.core.config import settings
@@ -195,3 +196,46 @@ async def test_user_can_list_and_revoke_only_own_sessions(unauthenticated_client
     )
     assert remaining.status_code == 200
     assert len(remaining.json()) == 1
+    revoked_session_profile = await unauthenticated_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {second_session_token}"},
+    )
+    assert revoked_session_profile.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes_session_even_after_access_token_expiry(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "auth_secret_key",
+        "test-only-secret-key-that-is-long-enough-for-hmac",
+    )
+    await unauthenticated_client.post(
+        "/auth/register",
+        json={"email": "expired-logout@example.com", "password": "a-long-test-password"},
+    )
+    login = await unauthenticated_client.post(
+        "/auth/login",
+        data={"username": "expired-logout@example.com", "password": "a-long-test-password"},
+    )
+    assert login.status_code == 200
+    payload = jwt.decode(
+        login.json()["access_token"],
+        settings.auth_secret_key,
+        algorithms=["HS256"],
+    )
+    payload["exp"] = 1
+    expired_access_token = jwt.encode(
+        payload,
+        settings.auth_secret_key,
+        algorithm="HS256",
+    )
+
+    logged_out = await unauthenticated_client.post(
+        "/auth/logout",
+        headers={"Authorization": f"Bearer {expired_access_token}"},
+    )
+    assert logged_out.status_code == 204
+
+    refresh = await unauthenticated_client.post("/auth/refresh")
+    assert refresh.status_code == 401
