@@ -2,6 +2,7 @@
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
+from urllib.parse import urlsplit
 
 
 class Settings(BaseSettings):
@@ -47,6 +48,22 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
 
+    @staticmethod
+    def _is_secure_origin(value: str) -> bool:
+        try:
+            parsed = urlsplit(value)
+            return (
+                parsed.scheme == "https"
+                and bool(parsed.hostname)
+                and parsed.username is None
+                and parsed.password is None
+                and parsed.path in {"", "/"}
+                and not parsed.query
+                and not parsed.fragment
+            )
+        except ValueError:
+            return False
+
     @model_validator(mode="after")
     def validate_runtime_configuration(self):
         if self.environment not in {"development", "test", "production"}:
@@ -56,20 +73,34 @@ class Settings(BaseSettings):
         if self.environment == "production":
             if self.debug:
                 raise ValueError("DEBUG must be false in production")
-            if len(self.auth_secret_key) < 32 or self.auth_secret_key.startswith("CHANGE_ME"):
+            if (
+                len(self.auth_secret_key) < 32
+                or self.auth_secret_key.strip() != self.auth_secret_key
+                or self.auth_secret_key.casefold().startswith("change_me")
+            ):
                 raise ValueError("AUTH_SECRET_KEY must be a unique random secret of at least 32 characters in production")
             if not self.refresh_token_cookie_secure:
                 raise ValueError("REFRESH_TOKEN_COOKIE_SECURE must be true in production")
             origins = [item.strip() for item in self.frontend_origins.split(",") if item.strip()]
-            if not origins or any(not item.startswith("https://") for item in origins):
-                raise ValueError("FRONTEND_ORIGINS must contain only HTTPS origins in production")
-            if not self.frontend_public_url.startswith("https://"):
-                raise ValueError("FRONTEND_PUBLIC_URL must use HTTPS in production")
+            if not origins or any(not self._is_secure_origin(item) for item in origins):
+                raise ValueError("FRONTEND_ORIGINS must contain valid HTTPS origins without paths in production")
+            if not self._is_secure_origin(self.frontend_public_url):
+                raise ValueError("FRONTEND_PUBLIC_URL must be a valid HTTPS origin in production")
             database_url = make_url(self.database_url)
-            if not database_url.drivername.startswith("postgresql") or not database_url.password or "CHANGE_ME" in database_url.password:
-                raise ValueError("DATABASE_URL must use PostgreSQL with a non-placeholder password in production")
-            if self.email_verification_required and not (self.smtp_host and self.smtp_from_email):
-                raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required when email verification is enabled in production")
+            if (
+                not database_url.drivername.startswith("postgresql")
+                or not database_url.host
+                or not database_url.username
+                or not database_url.database
+                or not database_url.password
+                or "change_me" in database_url.password.casefold()
+            ):
+                raise ValueError("DATABASE_URL must use PostgreSQL with a host, database, username, and non-placeholder password in production")
+            if self.email_verification_required:
+                if not (self.smtp_host and self.smtp_from_email):
+                    raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required when email verification is enabled in production")
+                if self.smtp_username and not self.smtp_password:
+                    raise ValueError("SMTP_PASSWORD is required when SMTP_USERNAME is configured")
         return self
 
     model_config = SettingsConfigDict(
