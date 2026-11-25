@@ -220,6 +220,8 @@ function App() {
 
   if (!confirmed) return
 
+  searchRequestId.current += 1
+  setLoading(false)
   setDeletingDocumentId(document.id)
   setMessage('')
 
@@ -233,8 +235,6 @@ function App() {
       throw new Error(`HTTP ${response.status}`)
     }
 
-    searchRequestId.current += 1
-    setLoading(false)
     setDocuments((current) =>
       current.filter((item) => item.id !== document.id),
     )
