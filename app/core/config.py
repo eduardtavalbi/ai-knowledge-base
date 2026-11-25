@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     )
 
     auth_secret_key: str = "CHANGE_ME_USE_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS"
+    migration_owner_email: str = ""
+    migration_owner_password: str = ""
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
