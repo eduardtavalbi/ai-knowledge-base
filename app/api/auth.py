@@ -26,7 +26,6 @@ from app.models.security_audit_event import SecurityAuditEvent
 from app.services.email import send_account_email
 from app.services.security import (
     enforce_rate_limit,
-    hash_security_identifier,
     record_security_event,
 )
 
@@ -384,13 +383,19 @@ async def resend_verification(
         identity_limit=settings.auth_recovery_identity_limit,
         window_seconds=settings.auth_recovery_window_seconds,
     )
-    await record_security_event(db, "verification_email_requested", http_request, email=request.email)
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalar_one_or_none()
+    await record_security_event(
+        db,
+        "verification_email_requested",
+        http_request,
+        email=request.email,
+        user_id=user.id if user is not None else None,
+    )
     if not settings.email_verification_required:
         return {"message": "If the account requires verification, an email will be sent."}
     if not _email_delivery_configured():
         raise HTTPException(status_code=503, detail="Email delivery is not configured")
-    result = await db.execute(select(User).where(User.email == request.email))
-    user = result.scalar_one_or_none()
     if user is not None and not user.email_verified:
         token = await _create_action_token(
             user, db, "email_verification",
@@ -416,11 +421,17 @@ async def forgot_password(
         identity_limit=settings.auth_recovery_identity_limit,
         window_seconds=settings.auth_recovery_window_seconds,
     )
-    await record_security_event(db, "password_reset_requested", http_request, email=request.email)
-    if not _email_delivery_configured():
-        raise HTTPException(status_code=503, detail="Email delivery is not configured")
     result = await db.execute(select(User).where(User.email == request.email))
     user = result.scalar_one_or_none()
+    await record_security_event(
+        db,
+        "password_reset_requested",
+        http_request,
+        email=request.email,
+        user_id=user.id if user is not None else None,
+    )
+    if not _email_delivery_configured():
+        raise HTTPException(status_code=503, detail="Email delivery is not configured")
     if user is not None:
         token = await _create_action_token(
             user, db, "password_reset",
@@ -828,15 +839,6 @@ async def delete_account(
         await db.execute(
             delete(SecurityAuditEvent).where(
                 SecurityAuditEvent.user_id == locked_user.id
-            )
-        )
-        # Recovery requests intentionally avoid attaching a user ID so their
-        # response cannot disclose account existence. Delete their pseudonymous
-        # email-linked audit events in a separate, explicit statement.
-        email_digest = hash_security_identifier(locked_user.email.casefold())
-        await db.execute(
-            delete(SecurityAuditEvent).where(
-                SecurityAuditEvent.email_hash == email_digest
             )
         )
         await db.delete(locked_user)
