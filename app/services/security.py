@@ -75,7 +75,9 @@ async def enforce_rate_limit(
                 ),
                 "request_count": case(
                     (same_window, RateLimitBucket.request_count + 1),
-                    (newer_window_exists, RateLimitBucket.request_count),
+                    # Count delayed requests against the active bucket so
+                    # they cannot bypass the limit without rolling its window back.
+                    (newer_window_exists, RateLimitBucket.request_count + 1),
                     else_=1,
                 ),
             },
