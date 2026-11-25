@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pwdlib import PasswordHash
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -827,14 +827,16 @@ async def delete_account(
         # Remove account-linked audit records as part of the user's data deletion.
         await db.execute(
             delete(SecurityAuditEvent).where(
-                or_(
-                    SecurityAuditEvent.user_id == locked_user.id,
-                    # Recovery requests intentionally avoid attaching a user ID
-                    # so their response cannot disclose account existence. Remove
-                    # those pseudonymous email-linked events on account deletion too.
-                    SecurityAuditEvent.email_hash
-                    == hash_security_identifier(locked_user.email.casefold()),
-                )
+                SecurityAuditEvent.user_id == locked_user.id
+            )
+        )
+        # Recovery requests intentionally avoid attaching a user ID so their
+        # response cannot disclose account existence. Delete their pseudonymous
+        # email-linked audit events in a separate, explicit statement.
+        email_digest = hash_security_identifier(locked_user.email.strip().casefold())
+        await db.execute(
+            delete(SecurityAuditEvent).where(
+                SecurityAuditEvent.email_hash == email_digest
             )
         )
         await db.delete(locked_user)
