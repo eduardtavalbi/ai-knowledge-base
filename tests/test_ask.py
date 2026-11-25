@@ -81,7 +81,7 @@ async def test_ask_returns_503_when_gemini_unavailable(ask_request):
         ),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            await ask_question(ask_request, db=AsyncMock())
+            await ask_question(ask_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail == (
@@ -115,7 +115,7 @@ async def test_ask_returns_answer_with_sources(ask_request):
             return_value="Python — язык программирования. [Источник: 1]",
         ) as mock_generate,
     ):
-        response = await ask_question(ask_request, db=AsyncMock())
+        response = await ask_question(ask_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert response.answer == "Python — язык программирования. [Источник: 1]"
     assert [source.model_dump() for source in response.sources] == chunks
@@ -136,7 +136,7 @@ async def test_ask_returns_message_when_no_chunks_found(ask_request):
             new_callable=AsyncMock,
         ) as mock_generate,
     ):
-        response = await ask_question(ask_request, db=AsyncMock())
+        response = await ask_question(ask_request, db=AsyncMock(), user=SimpleNamespace(id=1))
 
     assert "не найдено" in response.answer
     assert response.sources == []
