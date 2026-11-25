@@ -9,7 +9,6 @@ import {
   Upload,
   Sparkles,
   Database,
-  Settings,
   ChevronRight,
   Clock3,
   X,
@@ -41,31 +40,12 @@ type AskResponse = {
   sources: AskSource[]
 }
 
-const demoDocuments: DocumentItem[] = [
-  {
-    id: 1,
-    title: 'Изучение Python',
-    content:
-      'Python используется для разработки API, автоматизации задач и создания приложений.',
-  },
-  {
-    id: 2,
-    title: 'Python Learning Guide',
-    content:
-      'Python is a programming language used for backend development, automation, and artificial intelligence.',
-  },
-  {
-    id: 3,
-    title: 'План тренировок',
-    content:
-      'Регулярные силовые тренировки помогают развивать мышцы и увеличивать силу.',
-  },
-]
-
 function App() {
   const [query, setQuery] = useState('')
   const [documents, setDocuments] = useState<DocumentItem[]>([])
-  const [results, setResults] = useState<DocumentItem[]>(demoDocuments)
+  const [results, setResults] = useState<DocumentItem[]>([])
+  const [hasSearched, setHasSearched] = useState(false)
+  const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking')
   const [activePage, setActivePage] = useState<'search' | 'documents'>('search')
   const [selectedDocument, setSelectedDocument] = useState<DocumentItem | null>(null)
   const [editingDocument, setEditingDocument] = useState<DocumentItem | null>(null)
@@ -94,9 +74,11 @@ function App() {
 
       const data: DocumentItem[] = await response.json()
       setDocuments(data)
+      setApiStatus('online')
     } catch (error) {
       console.error('Ошибка загрузки документов:', error)
-      setMessage('Не удалось загрузить список документов.')
+      setApiStatus('offline')
+      setMessage('Не удалось загрузить список документов. Проверь подключение к API.')
     }
   }
 
@@ -109,6 +91,7 @@ function App() {
     }
 
     setLoading(true)
+    setHasSearched(true)
     setMessage('')
     setAiAnswer('')
     setAnswerSources([])
@@ -369,23 +352,25 @@ function App() {
         <div className="sidebar-divider" />
 
         <div className="workspace-label">COLLECTIONS</div>
-        <button className="nav-item">
+        <button
+          className={`nav-item ${activePage === 'documents' ? 'active' : ''}`}
+          onClick={() => {
+            setActivePage('documents')
+            void loadDocuments()
+          }}
+        >
           <FileText size={18} />
           <span>Все документы</span>
         </button>
 
         <div className="sidebar-bottom">
           <div className="status-card">
-            <span className="status-indicator" />
+            <span className={`status-indicator ${apiStatus}`} />
             <div>
               <strong>API подключение</strong>
-              <p>Локальный сервер</p>
+              <p>{apiStatus === 'checking' ? 'Проверка…' : apiStatus === 'online' ? 'Подключено' : 'Нет соединения'}</p>
             </div>
           </div>
-          <button className="nav-item">
-            <Settings size={18} />
-            <span>Настройки</span>
-          </button>
         </div>
       </aside>
 
@@ -611,7 +596,11 @@ function App() {
                 </article>
               ))}
               {!results.length && !message && (
-                <div className="empty-state">Выполни поиск, чтобы увидеть результаты.</div>
+                <div className="empty-state">
+                  {hasSearched
+                    ? 'По этому запросу документы не найдены.'
+                    : 'Выполни поиск, чтобы увидеть результаты.'}
+                </div>
               )}
             </div>
           </section>
