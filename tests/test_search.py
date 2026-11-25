@@ -1,6 +1,7 @@
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+import threading
 
 import pytest
 
@@ -186,3 +187,38 @@ async def test_search_documents_returns_full_text_matches_without_semantic_searc
 
     assert db.execute.await_count == 2
     mock_embedding.assert_not_called()
+
+
+
+@pytest.mark.asyncio
+async def test_search_documents_runs_embedding_in_worker_thread():
+    title_result = MagicMock()
+    title_result.scalars.return_value.all.return_value = []
+    text_result = MagicMock()
+    text_result.all.return_value = []
+    semantic_result = MagicMock()
+    semantic_result.all.return_value = []
+
+    db = AsyncMock()
+    db.execute.side_effect = [title_result, text_result, semantic_result]
+
+    event_loop_thread = threading.get_ident()
+    embedding_thread = None
+
+    def generate_embedding_in_test_thread(query):
+        nonlocal embedding_thread
+        embedding_thread = threading.get_ident()
+        return [0.1] * 384
+
+    with patch(
+        "app.services.search.generate_embedding",
+        side_effect=generate_embedding_in_test_thread,
+    ):
+        documents = await search_documents(
+            query="Python",
+            db=db,
+        )
+
+    assert documents == []
+    assert embedding_thread is not None
+    assert embedding_thread != event_loop_thread
