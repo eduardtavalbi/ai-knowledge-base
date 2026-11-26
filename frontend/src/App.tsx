@@ -91,6 +91,7 @@ function App() {
   const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const searchRequestId = useRef(0)
@@ -496,6 +497,7 @@ function App() {
   }
 
   async function downloadAccountExport() {
+    setExporting(true)
     try {
       const response = await requestApi(`${API_URL}/auth/me/export`)
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -512,6 +514,8 @@ function App() {
       setMessage('Экспорт данных подготовлен и скачан.')
     } catch (error) {
       setMessage(error instanceof Error ? `Не удалось экспортировать данные: ${error.message}` : 'Не удалось экспортировать данные.')
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -918,7 +922,10 @@ function App() {
 
         <div className="workspace-label">WORKSPACE</div>
 
+        <nav aria-label="Основная навигация">
         <button
+          type="button"
+          aria-label="Семантический поиск"
           className={`nav-item ${activePage === 'search' ? 'active' : ''}`}
           aria-current={activePage === 'search' ? 'page' : undefined}
           onClick={() => setActivePage('search')}
@@ -927,6 +934,8 @@ function App() {
           <span>Семантический поиск</span>
         </button>
         <button
+          type="button"
+          aria-label="Моя база знаний"
           className={`nav-item ${activePage === 'documents' ? 'active' : ''}`}
           aria-current={activePage === 'documents' ? 'page' : undefined}
           onClick={() => {
@@ -938,7 +947,7 @@ function App() {
           <span>Моя база знаний</span>
           <span className="nav-count">{documents.length}</span>
         </button>
-
+        </nav>
 
         <div className="sidebar-bottom">
           <div className="status-card" role="status" aria-live="polite">
@@ -957,8 +966,8 @@ function App() {
             Workspace <ChevronRight size={15} /> <span>{activePage === 'search' ? 'Поиск' : 'Моя база знаний'}</span>
           </div>
           <div className="topbar-actions">
-            <button className="account-export-button" type="button" onClick={() => void downloadAccountExport()}>
-              <Download size={15} /> Экспорт данных
+            <button className="account-export-button" type="button" onClick={() => void downloadAccountExport()} disabled={exporting} aria-busy={exporting}>
+              {exporting ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />} {exporting ? 'Подготовка…' : 'Экспорт данных'}
             </button>
             <button className="account-delete-button" type="button" onClick={() => { setAccountDeleteOpen(true); setMessage('') }}>
               Удалить аккаунт
@@ -1095,7 +1104,7 @@ function App() {
             <div className="search-hint">
               <span>Попробуй:</span>
               {['Python', 'API', 'тренировки'].map((term) => (
-                <button key={term} onClick={() => setQuery(term)}>
+                <button key={term} type="button" onClick={() => setQuery(term)}>
                   {term}
                 </button>
               ))}
@@ -1149,7 +1158,7 @@ function App() {
               )}
             </section>
           )}
-          {message && <div className="message-banner">{message}</div>}
+          {message && <div className="message-banner" role="status" aria-live="polite">{message}</div>}
           {activePage === 'search' && (
           <section className="results-section">
             <div className="section-heading">
