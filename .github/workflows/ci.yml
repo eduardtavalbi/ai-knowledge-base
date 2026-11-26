@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [main, feat/postgres-backup-restore-runbook]
+    branches: [main, feat/postgres-backup-restore-runbook, feat/offsite-backup-reliability]
   pull_request:
     branches: [main]
 
@@ -30,6 +30,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Validate backup shell scripts
+        run: |
+          bash -n scripts/backup_postgres.sh
+          bash -n scripts/verify_postgres_backup.sh
+          bash -n scripts/offsite_postgres_backup.sh
+          systemd-analyze calendar '*-*-* 00/6:00:00'
+          systemd-analyze calendar '*-*-* 03:00:00'
 
       - name: Validate Docker Compose configuration
         env:

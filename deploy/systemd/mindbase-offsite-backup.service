@@ -1,0 +1,14 @@
+[Unit]
+Description=Create and upload an encrypted Mindbase PostgreSQL backup
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mindbase
+Group=docker
+WorkingDirectory=/opt/mindbase
+EnvironmentFile=/etc/mindbase/offsite-backup.env
+ExecStart=/usr/bin/bash /opt/mindbase/scripts/offsite_postgres_backup.sh backup
+UMask=0077
