@@ -150,7 +150,7 @@ async function main() {
     await page.locator('#edit-title').fill('Security policy — updated');
     await page.locator('#edit-content').fill('MFA is mandatory for all administrators and privileged users.');
     await page.getByRole('button', { name: 'Сохранить' }).click();
-    await page.getByRole('heading', { name: 'Security policy — updated' }).waitFor();
+    await page.getByRole('heading', { name: 'Security policy — updated' }).last().waitFor();
     await page.getByRole('button', { name: 'Закрыть документ' }).click();
     await page.getByText('Security policy — updated', { exact: true }).waitFor();
 
