@@ -129,10 +129,11 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 
 - PR #12 version 2 contains **14 synthetic documents and 17 bilingual queries**: 14 answerable and 3 explicitly unanswerable. Hard cases include employee/contractor VPN policies, a superseded 2024 leave policy, customer-data handling and no-answer questions.
 - The benchmark uses the production `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` model with PostgreSQL hybrid vector/FTS retrieval; Gemini query rewriting is disabled to isolate ranking.
-- Expanded RAG evaluation #10 passed on exact PR #12 head `fc3d94c`. Metrics: **Recall@5 1.00**, **MRR@5 0.8571**, 0 misses; **0/3** unanswerable queries retrieved context (0% no-answer retrieval rate). Artifact ID `15075631573`.
-- Four answerable queries ranked their relevant document second: the employee/contractor VPN distractor in two queries and the superseded/current leave-policy distractor in two. All relevant documents still appeared within top 5.
-- Backend CI #436 passed **211 tests** on the same PR #12 head, including ORM mapper-registration and no-answer metric tests.
-- This is still a small synthetic corpus. It must not be treated as a commercial-domain quality guarantee or a release gate; next step is reviewed anonymized data and live answer/citation evaluation.
+- Expanded RAG evaluation #14 passed on latest PR #12 head `d98ead0`. Metrics: **Recall@5 1.00**, **MRR@5 0.9286**, 0 misses; **0/3** unanswerable queries retrieved context (0% no-answer retrieval rate). Artifact ID `15075816487`.
+- Added a query-intent-aware supersession penalty: explicitly outdated/superseded sources are down-ranked only for current/latest-policy questions and remain searchable for historical queries. This moved both Russian and English current-leave queries to the current 2026 policy at rank 1 and improved MRR from 0.8571 to 0.9286.
+- Two near-duplicate remote-access/contractor queries still rank the relevant source second, though it remains in top 2. This is a known cross-lingual ambiguity to address with deterministic bilingual lexical expansion or better document metadata.
+- Backend CI #447 passed **212 tests** on the same PR #12 head, including ORM mapper registration and bilingual current-vs-historical ranking regression coverage.
+- This remains a small synthetic corpus, not a commercial-domain quality guarantee or release gate. Next step is reviewed anonymized data and live answer/citation/abstention evaluation.
 
 
 ## Operations audit — backup/restore verified
@@ -147,8 +148,8 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 ## Next actions — continue here
 
 1. Synchronize stacked PRs #8, #9, #10 and #12 with the latest PR #7 base; resolve any conflicts and rerun checks on each resulting exact head. Do not merge.
-2. PR #11: add browser-level journeys for registration/login, session refresh, upload, document CRUD, search, AI answer, export and mobile navigation; build/lint/container smoke is not E2E.
-3. RAG: expand the synthetic benchmark into a reviewed anonymized corpus; add a controlled live Gemini evaluation for answer correctness, source support, citation validity and abstention. Track ranking errors found in v2.
+2. PR #11: browser E2E smoke is implemented for login, session refresh, document loading, AI search, upload, edit, export and logout. Latest Frontend CI #281 is rerunning after correcting two test-locator assumptions; verify the exact result and fix any remaining failures.
+3. RAG: extend the benchmark to a reviewed anonymized corpus; add a controlled live Gemini evaluation for answer correctness, source support, citation validity and abstention. Improve the remaining English contractor/remote-access ranking ambiguity.
 4. Operations: add encrypted off-site backup storage, retention policy, scheduled restore drills and RPO/RTO targets; keep production data out of CI.
 5. Audit clean-start deployment, reverse-proxy/TLS/HSTS, structured logging, monitoring/alerts and production configuration.
 6. Finish targeted PR #7 security/reliability review; do not reopen completed work without a demonstrated regression.
@@ -173,4 +174,5 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 | 2026-11-26 | Completed strict frontend CSP origin binding and verified frontend container behavior. | PR #11 head `f126903`; Frontend CI #262 and Backend CI #403 passed; CSP allows only the configured `VITE_API_URL` for connections. |
 | 2026-11-26 | Completed PostgreSQL backup/restore CI end-to-end, including checksum and corrupted-archive rejection. | PR #10 code head `84a307e`; Backend CI #429 passed 204 tests, temporary restore, Alembic/schema checks and corrupt archive rejection; Frontend CI #271 passed; PR base restored to #7, latest head `4b3adfd`. |
 | 2026-11-26 | Expanded the RAG benchmark to 17 queries across 14 documents, including 3 no-answer cases; added separate no-answer retrieval false-positive metric and clarified that it does not measure answer abstention. | PR #12 head `fc3d94c`; expanded RAG evaluation #10 and Backend CI #436 running; earlier 8-query score explicitly retained as historical only. |
-| 2026-11-26 | Verified expanded synthetic RAG benchmark and PostgreSQL backup/restore automation; synchronized latest exact-head CI evidence. | PR #12 head `fc3d94c`: RAG #10 Recall@5 1.00, MRR@5 0.8571, no-answer retrieval 0/3, artifact `15075631573`; Backend #436 211 tests. PR #10 head `308e2f7`: Backend #439 204 tests plus successful restore/corruption checks; Frontend #275 passed. PR #7 head `35db90b`: Backend #437 204 tests, Frontend #274 passed. |
+| 2026-11-26 | Improved current-policy retrieval ranking and reran expanded RAG benchmark on the latest head. | PR #12 head `d98ead0`: RAG #14 Recall@5 1.00, MRR@5 0.9286, no-answer retrieval 0/3, artifact `15075816487`; Backend #447 212 tests. Superseded 2024 leave policy now ranks below current 2026 policy for Russian and English queries. |
+| 2026-11-26 | Added browser E2E smoke coverage for authenticated workspace journeys and corrected test assumptions after CI execution. | PR #11 head `6a65ae8`; previous Frontend CI #279/#280 exposed a hidden-document-list assertion and ambiguous heading locator; latest Frontend CI #281 is pending. Backend CI #457 is pending. |
