@@ -36,6 +36,8 @@ jobs:
           bash -n scripts/backup_postgres.sh
           bash -n scripts/verify_postgres_backup.sh
           bash -n scripts/offsite_postgres_backup.sh
+          systemd-analyze calendar '*-*-* 00/6:00:00'
+          systemd-analyze calendar '*-*-* 03:00:00'
 
       - name: Validate Docker Compose configuration
         env:
