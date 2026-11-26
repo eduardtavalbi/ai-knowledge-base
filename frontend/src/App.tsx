@@ -507,7 +507,8 @@ function App() {
       window.document.body.appendChild(link)
       link.click()
       link.remove()
-      window.URL.revokeObjectURL(url)
+      // Let the browser start consuming the blob before releasing its object URL.
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1000)
       setMessage('Экспорт данных подготовлен и скачан.')
     } catch (error) {
       setMessage(error instanceof Error ? `Не удалось экспортировать данные: ${error.message}` : 'Не удалось экспортировать данные.')
