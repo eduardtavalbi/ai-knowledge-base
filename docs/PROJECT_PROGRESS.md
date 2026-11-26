@@ -124,27 +124,28 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 - Factual claims and mixed refusal-plus-claim responses still require valid citations. Latest PR #9 Backend CI passed 207 tests; Frontend CI passed on the same head.
 - Remaining quality work is a labelled corpus and real-embedding benchmark (Recall@K/MRR), followed by controlled groundedness/citation evaluation; unit tests alone are not a live model-quality benchmark.
 
-## RAG retrieval benchmark — implemented, verification pending
+## RAG retrieval benchmark — verified technical baseline
 
 - PR #12 adds an 8-query Russian/English labelled corpus with 11 synthetic documents and distractors.
-- The opt-in benchmark uses the real multilingual SentenceTransformer embeddings and PostgreSQL hybrid vector/FTS retrieval, with Gemini query expansion disabled to isolate ranking.
-- It reports Recall@5 and MRR@5 plus per-query relevant rank and retrieved titles. Unit tests validate corpus labels and metric arithmetic.
-- Backend CI #368 passed 208 tests and Frontend CI #239 passed on the exact PR #12 head. The benchmark itself requires the full ML dependencies and a disposable PostgreSQL database; no real-embedding score is claimed yet.
+- The opt-in benchmark uses the real `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` embeddings and PostgreSQL hybrid vector/FTS retrieval, with Gemini query expansion disabled to isolate ranking.
+- RAG retrieval evaluation #3 passed on head `34a9f1c`: all 8 relevant documents ranked first; Recall@5 = 1.00, MRR@5 = 1.00, misses = 0. The JSON report is uploaded as artifact `mindbase-rag-retrieval-evaluation` (run #3).
+- Backend CI #407 passed 209 tests on the same PR #12 head. The benchmark initially exposed missing `UserSession` ORM registration; explicit model imports and a mapper-configuration regression test were added before the successful run.
+- This is only a technical baseline on a small synthetic corpus, not evidence of commercial-domain retrieval quality. Next quality step is a larger reviewed, anonymized corpus with realistic ambiguous, contradictory and no-answer cases.
 
-## Operations audit — active verification
+## Operations audit — backup/restore verification pending
 
 - `/health` is a liveness check; `/ready` checks PostgreSQL connectivity. Compose starts the API only after database health and applies Alembic migrations before Uvicorn.
-- PR #10 now includes executable `scripts/backup_postgres.sh` and `scripts/verify_postgres_backup.sh`. The first creates and validates a custom-format dump plus SHA-256 checksum; the second restores into a temporary database and verifies the Alembic version and `public.documents` table before cleanup.
-- Backend CI #393/#399 exposed authentication/resource-isolation problems in the Compose verification job. The latest revision uses a unique Compose project, volume and host port per workflow run; CI #405 is executing. The backup/restore workflow is not verified until that job passes.
-- The shell scripts both pass `bash -n`; local Docker execution is unavailable, so the CI run is the required end-to-end verification.
+- PR #10 now includes executable `scripts/backup_postgres.sh` and `scripts/verify_postgres_backup.sh`. The first creates and validates a custom-format dump plus SHA-256 checksum; the second verifies the checksum, restores into a temporary database and checks the Alembic version and `public.documents` table before cleanup.
+- Backend CI #405 passed Compose validation, DB connectivity/migrations and 204 tests but failed at the SQLAlchemy migration connection. The next revision moved the SQLAlchemy connectivity precheck after Compose DB startup, isolates project/volume/port per run, and adds a corrupted-archive rejection test. Latest PR #10 head is `4768d28`; no successful run on that head is available yet.
+- Both shell scripts pass `bash -n`; local Docker execution is unavailable, so the disposable-PostgreSQL CI run remains the required end-to-end verification.
 
 ## Next actions — continue here
 
-1. PR #10: verify the latest isolated Compose backup/restore CI #405 on head `379f66a`; fix any remaining issue and do not claim recovery readiness until the temporary restore succeeds.
-2. PR #12: run the real multilingual embedding benchmark on the latest head; the first run exposed missing ORM model registration, now fixed with explicit session-model imports and a mapper-configuration regression test. Record actual Recall@5/MRR@5 from the uploaded report.
-3. PR #11: the frontend container now builds a restrictive CSP `connect-src` from the configured `VITE_API_URL`, rather than allowing arbitrary HTTP(S) destinations. Frontend CI #262 and Backend CI #403 are running on the updated head `f126903`; verify both before marking this change complete.
-4. Continue browser-level frontend journey testing; container smoke tests do not replace auth, session refresh, document CRUD/upload, search, AI answer and export E2E coverage.
-5. Finish targeted PR #7 security/reliability review; the Retry-After race fix remains verified, and do not reopen completed work without a concrete regression.
+1. PR #10: get the isolated Compose backup/restore workflow passing on the latest head `4768d28`. The run must prove archive creation, checksum validation, restore into a temporary database, schema checks, cleanup and rejection of a corrupted archive.
+2. PR #11: container deployment and security headers are verified on head `f126903` (Frontend CI #262 and Backend CI #403 passed). Move on to browser-level journeys: registration/login, session refresh, upload, document CRUD, search, AI answer, export and mobile navigation.
+3. PR #12: real-embedding smoke benchmark is verified (Recall@5/MRR@5 = 1.00 on 8 synthetic queries). Expand to a reviewed, anonymized corpus with realistic ambiguous, contradictory and no-answer examples before using metrics as a release gate.
+4. Finish targeted PR #7 security/reliability review; the Retry-After race fix remains verified, and do not reopen completed work without a concrete regression.
+5. Audit clean-start deployment, reverse-proxy/TLS/HSTS configuration, backups/restore, logs/monitoring and recovery assumptions against an actual production-like environment.
 6. Keep PRs #7–#12 Draft/unmerged until explicit user authorization. Do not calculate an overall percentage until all six areas have auditable deliverable inventories.
 
 ## Update log
@@ -161,3 +162,6 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 | 2026-11-26 | Added explicit `UserSession`/refresh-token model imports to the benchmark and a mapper-configuration regression test. | PR #12 commits `9f3cba1` and `34a9f1c`; RAG benchmark reruns #2/#3 pending; no metric is claimed yet. |
 | 2026-11-26 | Added executable PostgreSQL backup and temporary restore verification scripts; isolated Compose CI resources by run ID after authentication collisions. | PR #10 head `379f66a`; both scripts pass `bash -n`; CI #405 pending after earlier failures #393/#399. |
 | 2026-11-26 | Hardened frontend container CSP/Permissions-Policy and restricted `connect-src` to the configured API origin. | PR #11 head `f126903`; previous Frontend CI #258 and Backend CI #391 passed before the final CSP-origin tightening; latest #262/#403 pending. |
+| 2026-11-26 | Executed the first real-embedding RAG benchmark against disposable pgvector PostgreSQL; fixed missing ORM registration and added mapper regression coverage. | PR #12 head `34a9f1c`; RAG evaluation #3 passed: 8/8 relevant docs at rank 1, Recall@5 1.00, MRR@5 1.00, misses 0; artifact `15075381093`; Backend CI #407 passed 209 tests. |
+| 2026-11-26 | Completed strict frontend CSP origin binding and verified frontend container behavior. | PR #11 head `f126903`; Frontend CI #262 and Backend CI #403 passed; CSP allows only the configured `VITE_API_URL` for connections. |
+| 2026-11-26 | Added checksum verification and corrupted-archive rejection coverage to PostgreSQL backup/restore workflow. | PR #10 head `4768d28`; prior run #405 failed at SQLAlchemy DB connection after 204 tests; latest workflow rerun not yet available. |
