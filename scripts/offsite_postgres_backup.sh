@@ -18,8 +18,8 @@ if [[ $# -ne 1 ]]; then
   exit 2
 fi
 
-if [[ -z "${BACKUP_REMOTE:-}" ]]; then
-  printf 'BACKUP_REMOTE must point to an off-site rclone destination.\n' >&2
+if [[ -z "${BACKUP_REMOTE:-}" || "$BACKUP_REMOTE" != *:* ]]; then
+  printf 'BACKUP_REMOTE must be an rclone remote path (remote:path), not a local directory.\n' >&2
   exit 2
 fi
 
@@ -80,6 +80,11 @@ case "$command_name" in
     require_command rclone
     require_command sha256sum
 
+    if ! rclone lsf --files-only --include '*.dump.age' "$BACKUP_REMOTE" | sort -r > "$work_dir/archive-list"; then
+      printf 'Could not list off-site backups at %s.\n' "$BACKUP_REMOTE" >&2
+      exit 1
+    fi
+
     found=0
     while IFS= read -r archive_name; do
       [[ -n "$archive_name" ]] || continue
@@ -113,7 +118,7 @@ case "$command_name" in
         exit 0
       fi
       printf 'Restore drill failed; trying the previous backup.\n' >&2
-    done < <(rclone lsf --files-only --include '*.dump.age' "$BACKUP_REMOTE" | sort -r)
+    done < "$work_dir/archive-list"
 
     if [[ "$found" -eq 0 ]]; then
       printf 'No encrypted PostgreSQL backups found at %s.\n' "$BACKUP_REMOTE" >&2
