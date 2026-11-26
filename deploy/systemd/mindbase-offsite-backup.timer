@@ -1,0 +1,11 @@
+[Unit]
+Description=Run encrypted Mindbase PostgreSQL backups every six hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+RandomizedDelaySec=10m
+Persistent=true
+Unit=mindbase-offsite-backup.service
+
+[Install]
+WantedBy=timers.target
