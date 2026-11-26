@@ -1,4 +1,7 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+from fastapi import HTTPException
 
 import pytest
 from pydantic import ValidationError
@@ -7,8 +10,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import Settings
 from app.db.base import Base
+from app.models.rate_limit_bucket import RateLimitBucket
 from app.models.security_audit_event import SecurityAuditEvent
 from app.services.audit_retention import purge_security_audit_events
+from app.services.security import enforce_rate_limit
 
 
 def production_settings(**overrides):
@@ -139,3 +144,189 @@ async def test_readiness_endpoint_returns_503_when_database_is_unavailable(clien
     response = await client.get("/ready")
     assert response.status_code == 503
     assert response.json() == {"detail": "Database is unavailable"}
+
+
+
+@pytest.mark.asyncio
+async def test_global_identity_rate_limit_applies_across_client_ips():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    async with session_factory() as db:
+        first_request = SimpleNamespace(
+            client=SimpleNamespace(host="192.0.2.10")
+        )
+        second_request = SimpleNamespace(
+            client=SimpleNamespace(host="198.51.100.20")
+        )
+
+        await enforce_rate_limit(
+            db,
+            first_request,
+            "document_upload",
+            ip_limit=10,
+            identity="user-42",
+            identity_limit=1,
+            identity_is_global=True,
+            window_seconds=3600,
+        )
+
+        with pytest.raises(HTTPException) as error:
+            await enforce_rate_limit(
+                db,
+                second_request,
+                "document_upload",
+                ip_limit=10,
+                identity="user-42",
+                identity_limit=1,
+                identity_is_global=True,
+                window_seconds=3600,
+            )
+
+    assert error.value.status_code == 429
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_identity_rate_limit_remains_ip_scoped_by_default():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    async with session_factory() as db:
+        for client_ip in ("192.0.2.10", "198.51.100.20"):
+            await enforce_rate_limit(
+                db,
+                SimpleNamespace(client=SimpleNamespace(host=client_ip)),
+                "login",
+                ip_limit=10,
+                identity="same-email@example.com",
+                identity_limit=1,
+                window_seconds=3600,
+            )
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_delayed_rate_limit_request_cannot_move_bucket_to_an_older_window(monkeypatch):
+    from app.services import security
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    moments = iter(
+        [
+            datetime(2026, 1, 1, 12, 0, 59, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 0, 59, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 1, 1, tzinfo=timezone.utc),
+        ]
+    )
+
+    class ControlledDateTime:
+        @classmethod
+        def now(cls, tz=None):
+            return next(moments)
+
+        @staticmethod
+        def fromtimestamp(value, tz=None):
+            return datetime.fromtimestamp(value, tz)
+
+    monkeypatch.setattr(security, "datetime", ControlledDateTime)
+    request = SimpleNamespace(client=SimpleNamespace(host="192.0.2.55"))
+
+    async with session_factory() as db:
+        for _ in range(4):
+            await security.enforce_rate_limit(
+                db,
+                request,
+                "window_boundary",
+                ip_limit=10,
+                window_seconds=60,
+            )
+
+        bucket = await db.get(
+            RateLimitBucket,
+            security.hash_security_identifier("window_boundary:ip:192.0.2.55"),
+        )
+
+    assert bucket is not None
+    assert bucket.window_started_at.replace(tzinfo=timezone.utc) == datetime(
+        2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc
+    )
+    assert bucket.request_count == 3
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_retry_after_uses_active_window_for_delayed_request(monkeypatch):
+    from app.services import security
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    moments = iter(
+        [
+            datetime(2026, 1, 1, 12, 0, 59, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 1, 1, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 0, 59, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 12, 1, 2, tzinfo=timezone.utc),
+        ]
+    )
+
+    class ControlledDateTime:
+        @classmethod
+        def now(cls, tz=None):
+            return next(moments)
+
+        @staticmethod
+        def fromtimestamp(value, tz=None):
+            return datetime.fromtimestamp(value, tz)
+
+    monkeypatch.setattr(security, "datetime", ControlledDateTime)
+    request = SimpleNamespace(client=SimpleNamespace(host="192.0.2.56"))
+
+    async with session_factory() as db:
+        for _ in range(3):
+            await security.enforce_rate_limit(
+                db,
+                request,
+                "delayed_retry_after",
+                ip_limit=2,
+                window_seconds=60,
+            )
+
+        with pytest.raises(HTTPException) as error:
+            await security.enforce_rate_limit(
+                db,
+                request,
+                "delayed_retry_after",
+                ip_limit=2,
+                window_seconds=60,
+            )
+
+        bucket = await db.get(
+            RateLimitBucket,
+            security.hash_security_identifier(
+                "delayed_retry_after:ip:192.0.2.56"
+            ),
+        )
+
+    assert error.value.status_code == 429
+    assert error.value.headers["Retry-After"] == "59"
+    assert bucket is not None
+    assert bucket.window_started_at.replace(tzinfo=timezone.utc) == datetime(
+        2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc
+    )
+    assert bucket.request_count == 3
+    await engine.dispose()
+

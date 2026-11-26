@@ -10,6 +10,19 @@ from app.models.document_chunk import DocumentChunk
 from conftest import TestingSessionLocal
 from app.api.documents import upload_document
 
+
+@pytest.fixture(autouse=True)
+def mock_embedding_runtime(monkeypatch):
+    """Keep API behavior tests independent from the heavyweight ML runtime."""
+    monkeypatch.setattr(
+        "app.api.documents.generate_embedding",
+        lambda _text: [0.0] * 384,
+    )
+    monkeypatch.setattr(
+        "app.services.chunk_storage.generate_embeddings",
+        lambda texts: [[0.0] * 384 for _ in texts],
+    )
+
 @pytest.mark.asyncio
 async def test_create_document(client):
     response = await client.post(
@@ -139,11 +152,17 @@ async def test_delete_document(client):
 async def test_upload_rejects_missing_filename_with_clear_error():
     upload = UploadFile(filename=None, file=BytesIO(b"Document content"))
 
-    with pytest.raises(HTTPException) as error:
+    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
+    with (
+        patch("app.api.documents.enforce_rate_limit", new_callable=AsyncMock),
+        pytest.raises(HTTPException) as error,
+    ):
         await upload_document(
             response=Response(),
+            http_request=request,
             file=upload,
-            db=None,
+            db=AsyncMock(),
+            user=SimpleNamespace(id=1),
         )
 
     assert error.value.status_code == 400
@@ -932,3 +951,89 @@ def test_extracted_text_size_limit_is_measured_in_utf8_bytes():
 
     with pytest.raises(DocumentTooLargeError, match="2 MB limit"):
         _validate_extracted_text_size("я" * (MAX_EXTRACTED_TEXT_BYTES // 2 + 1))
+
+@pytest.mark.asyncio
+async def test_create_rolls_back_flushed_partial_chunks_when_chunk_storage_fails(client):
+    from sqlalchemy import select
+
+    from app.api.documents import _create_document_if_new
+    from app.models.document import Document
+    from app.models.document_chunk import DocumentChunk
+
+    async def add_partial_chunk_then_fail(document, db, source_segments=None):
+        db.add(
+            DocumentChunk(
+                document_id=document.id,
+                chunk_index=0,
+                content="Partially persisted chunk",
+                embedding=[0.0] * 384,
+            )
+        )
+        await db.flush()
+        raise RuntimeError("chunk storage failed after flush")
+
+    with (
+        patch("app.api.documents.generate_embedding", return_value=[0.0] * 384),
+        patch(
+            "app.api.documents.save_document_chunks",
+            side_effect=add_partial_chunk_then_fail,
+        ),
+    ):
+        async with TestingSessionLocal() as db:
+            with pytest.raises(
+                RuntimeError,
+                match="chunk storage failed after flush",
+            ):
+                await _create_document_if_new(
+                    title="Partial chunk rollback",
+                    content="The document and flushed chunk must both roll back.",
+                    db=db,
+                    user_id=1,
+                )
+
+    async with TestingSessionLocal() as db:
+        documents = (
+            await db.execute(
+                select(Document).where(Document.title == "Partial chunk rollback")
+            )
+        ).scalars().all()
+        chunks = (
+            await db.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.content == "Partially persisted chunk"
+                )
+            )
+        ).scalars().all()
+
+    assert documents == []
+    assert chunks == []
+
+
+@pytest.mark.asyncio
+async def test_upload_enforces_rate_limit_before_reading_file():
+    upload = UploadFile(filename="limited.txt", file=BytesIO(b"content"))
+    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
+    rate_limit_error = HTTPException(
+        status_code=429,
+        detail="Too many requests. Please try again later.",
+    )
+
+    with patch(
+        "app.api.documents.enforce_rate_limit",
+        new_callable=AsyncMock,
+        side_effect=rate_limit_error,
+    ) as mock_limit:
+        with pytest.raises(HTTPException) as error:
+            await upload_document(
+                response=Response(),
+                file=upload,
+                db=AsyncMock(),
+                user=SimpleNamespace(id=42),
+                http_request=request,
+            )
+
+    assert error.value.status_code == 429
+    assert upload.file.tell() == 0
+    mock_limit.assert_awaited_once()
+    assert mock_limit.await_args.args[2] == "document_upload"
+    assert mock_limit.await_args.kwargs["identity"] == "42"

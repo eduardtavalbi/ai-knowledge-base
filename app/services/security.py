@@ -35,6 +35,7 @@ async def enforce_rate_limit(
     window_seconds: int,
     identity: str | None = None,
     identity_limit: int | None = None,
+    identity_is_global: bool = False,
 ) -> None:
     now = datetime.now(timezone.utc)
     window_start = datetime.fromtimestamp(
@@ -44,7 +45,10 @@ async def enforce_rate_limit(
     client_ip = request.client.host if request.client else "unknown"
     dimensions = [("ip", client_ip, ip_limit)]
     if identity is not None and identity_limit is not None:
-        dimensions.append(("identity_ip", f"{identity.casefold()}:{client_ip}", identity_limit))
+        if identity_is_global:
+            dimensions.append(("identity", identity.casefold(), identity_limit))
+        else:
+            dimensions.append(("identity_ip", f"{identity.casefold()}:{client_ip}", identity_limit))
 
     dialect = db.get_bind().dialect.name
     insert_statement = pg_insert if dialect == "postgresql" else sqlite_insert
@@ -59,25 +63,47 @@ async def enforce_rate_limit(
             request_count=1,
         )
         same_window = RateLimitBucket.window_started_at == window_start
+        newer_window_exists = RateLimitBucket.window_started_at > window_start
         statement = statement.on_conflict_do_update(
             index_elements=[RateLimitBucket.key_hash],
             set_={
+                # A delayed request from an older window must never move the
+                # bucket backwards after a newer window has already started.
                 "window_started_at": case(
-                    (same_window, RateLimitBucket.window_started_at),
+                    (newer_window_exists, RateLimitBucket.window_started_at),
                     else_=window_start,
                 ),
                 "request_count": case(
                     (same_window, RateLimitBucket.request_count + 1),
+                    # Count delayed requests against the active bucket so
+                    # they cannot bypass the limit without rolling its window back.
+                    (newer_window_exists, RateLimitBucket.request_count + 1),
                     else_=1,
                 ),
             },
-        ).returning(RateLimitBucket.request_count)
-        count = (await db.execute(statement)).scalar_one()
+        ).returning(
+            RateLimitBucket.request_count,
+            RateLimitBucket.window_started_at,
+        )
+        result = await db.execute(statement)
+        count, active_window_start = result.one()
         if count > limit:
             exceeded = True
+            if active_window_start.tzinfo is None:
+                active_window_start = active_window_start.replace(tzinfo=timezone.utc)
+            current_time = datetime.now(timezone.utc)
             retry_after = max(
                 retry_after,
-                int((window_start + timedelta(seconds=window_seconds) - now).total_seconds()) + 1,
+                max(
+                    1,
+                    int(
+                        (
+                            active_window_start
+                            + timedelta(seconds=window_seconds)
+                            - current_time
+                        ).total_seconds()
+                    ) + 1,
+                ),
             )
 
     await db.execute(delete(RateLimitBucket).where(RateLimitBucket.window_started_at < now - timedelta(days=1)))

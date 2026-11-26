@@ -1,0 +1,75 @@
+name: RAG retrieval evaluation
+
+on:
+  pull_request:
+    branches: [feat/atomic-document-rollback-tests]
+    paths:
+      - "app/services/chunk_storage.py"
+      - "app/services/embeddings.py"
+      - "app/services/search.py"
+      - "requirements.txt"
+      - "scripts/evaluate_rag_retrieval.py"
+      - "tests/fixtures/rag_retrieval_eval.json"
+      - ".github/workflows/rag-retrieval-eval.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  retrieval-evaluation:
+    if: github.event.pull_request.head.ref == 'feat/rag-retrieval-evaluation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: mindbase_eval
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mindbase_eval"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Cache multilingual embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-paraphrase-multilingual-minilm-l12-v2-v1
+
+      - name: Install CPU-only PyTorch and application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install -r requirements.txt
+
+      - name: Run real-embedding PostgreSQL retrieval benchmark
+        env:
+          PG_TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/mindbase_eval
+          TOKENIZERS_PARALLELISM: "false"
+        run: |
+          set -o pipefail
+          python -m scripts.evaluate_rag_retrieval | tee rag-retrieval-evaluation.json
+
+      - name: Upload retrieval evaluation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mindbase-rag-retrieval-evaluation
+          path: rag-retrieval-evaluation.json
+          if-no-files-found: error
+          retention-days: 30
