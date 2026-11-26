@@ -15,7 +15,10 @@ RUN npm run build
 
 FROM nginx:alpine
 
+ARG VITE_API_URL=http://localhost:8000
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+RUN case "$VITE_API_URL" in http://*|https://*) ;; *) echo "VITE_API_URL must be an HTTP(S) API origin" >&2; exit 1 ;; esac \
+    && sed -i "s|__API_CONNECT_ORIGIN__|$VITE_API_URL|g" /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
