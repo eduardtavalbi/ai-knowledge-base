@@ -15,13 +15,13 @@ This runbook adds client-side encryption and an off-site copy to the local Compo
 Install Docker Compose, age and rclone on the host that can reach the production Compose database. Ensure the temporary staging directory used for plaintext dumps is on an encrypted filesystem or ephemeral storage; removing temporary files is not a secure-erasure guarantee. Generate an age key pair:
 
 ```bash
-sudo install -d -m 0700 /etc/mindbase
-sudo age-keygen -o /etc/mindbase/backup-age-identity.txt
+sudo install -d -o mindbase -g mindbase -m 0700 /etc/mindbase
+sudo -u mindbase age-keygen -o /etc/mindbase/backup-age-identity.txt
 sudo chmod 0600 /etc/mindbase/backup-age-identity.txt
 sudo age-keygen -y /etc/mindbase/backup-age-identity.txt
 ```
 
-The final command prints the public recipient. Store that value as `BACKUP_AGE_RECIPIENT`; keep the identity file private. Configure an rclone remote interactively or through your provider's secret-management process, and protect its config file (for example, mode 0600). Do not commit either file.
+The final command prints the public recipient. Store that value as `BACKUP_AGE_RECIPIENT`; keep the identity file private. Configure an rclone remote as the `mindbase` service user (or explicitly set `RCLONE_CONFIG` to its protected config), and make the config readable only by that account (for example, owner `mindbase`, mode 0600). Do not commit either file.
 
 Create a root-owned environment file such as `/etc/mindbase/offsite-backup.env`:
 
@@ -33,7 +33,7 @@ BACKUP_RETENTION_DAYS=30
 RCLONE_CONFIG=/etc/rclone/rclone.conf
 ```
 
-Protect it with `chmod 0600`. The age recipient is public, but the remote name and config location should still be controlled. The private identity and provider credentials must never be placed in this file as inline values.
+Keep this environment file root-owned with mode 0600; systemd reads it before starting the service. The age recipient is public, but the remote name and config location should still be controlled. The private identity and provider credentials must never be placed in this file as inline values.
 
 ## Operations
 
@@ -65,7 +65,19 @@ bash scripts/offsite_postgres_backup.sh prune
 
 ## Scheduling and recovery objectives
 
-Run `backup` from the production host on a schedule (for example, every six hours) using cron, systemd timers or the deployment scheduler. Run `verify-latest` at least daily and after changes to PostgreSQL, the backup scripts, encryption keys or storage configuration. Alert on any non-zero exit status; a scheduled command without monitoring is not an operational guarantee.
+The repository includes systemd units for a six-hour backup cadence and a daily restore drill. Adjust the service account, repository path and environment-file path if your host differs:
+
+```bash
+sudo install -m 0644 deploy/systemd/mindbase-offsite-backup.service /etc/systemd/system/
+sudo install -m 0644 deploy/systemd/mindbase-offsite-backup.timer /etc/systemd/system/
+sudo install -m 0644 deploy/systemd/mindbase-offsite-restore-drill.service /etc/systemd/system/
+sudo install -m 0644 deploy/systemd/mindbase-offsite-restore-drill.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now mindbase-offsite-backup.timer mindbase-offsite-restore-drill.timer
+systemctl list-timers 'mindbase-offsite-*'
+```
+
+The `mindbase` service account must be able to use Docker (typically via the `docker` group), read the age identity and rclone config, and execute the repository scripts. Treat Docker group membership as root-equivalent. Inspect runs with `journalctl -u mindbase-offsite-backup.service` and `journalctl -u mindbase-offsite-restore-drill.service`. Connect non-zero exits to operational alerting; a timer without monitoring is not an operational guarantee.
 
 A six-hour backup interval is a **proposed RPO ceiling**, not a measured guarantee: actual data loss can exceed it when a run fails or upload is delayed. Measure the end-to-end restore drill, including provisioning, download, decryption, database restore and application smoke checks, before publishing an RTO. Record backup timestamp, source commit, checksum, restore duration and result for each drill. Test key recovery separately and maintain a protected, independently recoverable copy of the age identity; losing it makes client-side encrypted backups unrecoverable.
 
