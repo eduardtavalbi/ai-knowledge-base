@@ -88,7 +88,7 @@ PR #7 was squash-merged into `main` at `f926111790ebf84102626b717621808e45d6e764
 | Frontend product flows | React + TypeScript + Vite; PR #8 adds accessible mobile navigation and duplicate-export prevention; PR #11 provides a containerized Nginx frontend with CSP/security headers | Mocked-API UI E2E and a full-stack Compose browser journey against real FastAPI/PostgreSQL now cover auth, refresh, search, upload, edit, delete, export and tenant isolation |
 | RAG quality | Multilingual embeddings, hybrid PostgreSQL/pgvector + FTS, RRF, citation validation and abstention tests; real-embedding benchmark v2 now reports Recall@5/MRR@5 and no-answer retrieval | Expand from synthetic to reviewed anonymized domain documents; evaluate live answer grounding, citations and abstention |
 | Security & reliability | Tenant isolation, auth/session/recovery, parser limits, upload size/rate limits, transaction rollback and concurrency have substantial tests | Finish targeted security review; preserve verified work and reopen only on concrete regression |
-| Infrastructure & operations | Docker Compose, migrations, health/readiness, frontend container, automated PostgreSQL backup/restore and corruption rejection are verified in CI | Production off-site encryption, retention, scheduled restore drills, RPO/RTO, structured logs and alerts |
+| Infrastructure & operations | Docker Compose, migrations, health/readiness, frontend container, and local PostgreSQL backup/restore with corruption rejection are integrated and CI-verified | PR #13 implements age encryption, rclone off-site upload, retention and restore drills; exact-head CI is running. Provider provisioning, scheduler/alerts, immutable storage and measured RTO remain |
 | Demo & release readiness | README/setup instructions, deployment container and operational recovery runbook exist | Clean-start production-like install, browser smoke suite, demo account/dataset, reverse-proxy/TLS review and release checklist |
 
 This area inventory is not yet a percentage. Convert it into a weighted deliverable checklist after inspecting the actual frontend, API, RAG evaluation and deployment workflows. Do not infer completion from README claims alone.
@@ -100,7 +100,8 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 - PR #9 — merged: `807b8385620146eaaf6bfa1b766f2e1b122f88c2`.
 - PR #11 — merged: `7a4b761341dbd64c8773ec7fcd725de09d30950b`.
 - PR #12 — merged: `0cebc1f2af958c0d4d48ef4439ce8f31402bf9b0`.
-- PR #10 — [PostgreSQL backup and restore automation](https://github.com/eduardtavalbi/ai-knowledge-base/pull/10), branch `feat/postgres-backup-restore-runbook`; being rebased onto current `main`, then its backup/restore CI must pass on the exact new head before merge.
+- PR #10 — merged: [PostgreSQL backup and restore automation](https://github.com/eduardtavalbi/ai-knowledge-base/pull/10), merge commit `c95f13c1f901725df4b19652ddd658c7443ac2af`.
+- PR #13 — [Encrypted off-site PostgreSQL backups and restore drills](https://github.com/eduardtavalbi/ai-knowledge-base/pull/13), Draft; branch `feat/offsite-backup-reliability`, exact head `2d4d7eb0e965b687a1bc81768ec42bfbd464bb52`; Backend CI #527 in progress.
 ## Frontend audit — initial findings
 
 - Core auth, document list/detail/edit/delete, upload, search/answer, source display, export and account deletion flows are implemented in `frontend/src/App.tsx`.
@@ -128,19 +129,21 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 - This remains a small synthetic corpus, not a commercial-domain quality guarantee or release gate. Next step is reviewed anonymized data and live answer/citation/abstention evaluation.
 
 
-## Operations audit — backup/restore implementation verified on PR #10; main integration pending
+## Operations audit — local backup/restore integrated; off-site reliability in progress
 
 - `/health` is a liveness check; `/ready` checks PostgreSQL connectivity. Compose starts the API after database health and applies Alembic migrations before Uvicorn.
 - PR #10 provides `scripts/backup_postgres.sh` and `scripts/verify_postgres_backup.sh`: custom-format archive, SHA-256 sidecar, checksum verification, temporary-database restore, Alembic/schema checks and cleanup.
 - Backend CI #439 passed on exact PR #10 head `308e2f7`: **204 tests in 8.31s**, isolated Compose PostgreSQL, migrations, backup creation, checksum, temporary restore, Alembic version `9f4c2e7a1b60`, `public.documents` verification and corrupted-archive rejection. Frontend CI #275 passed.
 - CI isolation uses unique Compose project/volume/host port per run while preserving the existing production volume name and default port.
-- Production readiness still requires encrypted off-site backups, retention, scheduled restore drills, explicit RPO/RTO, structured logs and alerting.
+- PR #10 local backup/restore is integrated into `main` and its exact-head CI passed: PostgreSQL archive creation, SHA-256 verification, temporary restore, Alembic/schema checks and corrupted-archive rejection.
+- PR #13 implements client-side age encryption, rclone upload, encrypted-object checksums, age-based retention and a restore drill that never overwrites the live database. Backend CI #527 is currently running on exact head `2d4d7eb`.
+- Deployment still needs a configured off-site provider/remote, protected key and credentials, host scheduling and alerting. The six-hour RPO is only a proposed ceiling; RTO must be measured in a real recovery exercise.
 
 
 ## Next actions — continue here
 
-1. Finish PR #10 integration: verify the rebased backup/restore scripts and Compose CI on the exact PR head, merge only after all checks pass, and verify the merge commit.
-2. Then implement the next operations block: encrypted off-site backup storage, retention/rotation policy, scheduled backup verification and restore drills, and explicit RPO/RTO targets. Keep provider-specific credentials external and configurable.
+1. Finish PR #13: inspect Backend CI #527 on exact head `2d4d7eb`, fix any failures, and rerun checks on the corrected head. Keep it Draft/unmerged until verification is complete.
+2. Configure the selected off-site provider, protected age identity, rclone credentials, host scheduler and alerting in the deployment environment. Run a real restore drill and measure RPO/RTO; do not treat the proposed six-hour interval as a guarantee.
 3. Complete deployment operations: HTTPS reverse proxy/TLS/HSTS, production secret injection, structured log collection, monitoring/alerting, and scheduled audit-retention cleanup.
 4. Evaluate live answer-generation quality separately from the synthetic retrieval benchmark, including grounded answers, citations, abstention, conflicting sources, and Russian/English behavior.
 5. Finish a six-area evidence inventory and calculate the weighted project score only from unique, verified deliverables. Do not repeat completed work or reuse historical rough percentages.
