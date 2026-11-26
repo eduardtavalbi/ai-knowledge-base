@@ -151,6 +151,11 @@ def test_offsite_backup_rejects_missing_remote_and_invalid_retention() -> None:
     assert invalid_retention.returncode == 2
     assert "positive integer" in invalid_retention.stderr
 
+    env["BACKUP_REMOTE"] = "/var/backups/mindbase"
+    local_path = run_script(["prune"], env)
+    assert local_path.returncode == 2
+    assert "rclone remote path" in local_path.stderr
+
 
 def test_restore_drill_requires_private_identity(tmp_path: Path) -> None:
     env = os.environ.copy()
