@@ -5,16 +5,43 @@ on:
     branches: [main]
     paths:
       - "frontend/**"
+      - "frontend/e2e/**"
+      - "app/**"
+      - "alembic/**"
+      - "requirements*.txt"
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "scripts/seed_fullstack_e2e.sh"
       - ".github/workflows/frontend-ci.yml"
   pull_request:
     branches: [main, feat/atomic-document-rollback-tests]
     paths:
       - "frontend/**"
+      - "app/**"
+      - "alembic/**"
+      - "requirements*.txt"
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "scripts/seed_fullstack_e2e.sh"
       - ".github/workflows/frontend-ci.yml"
 
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      COMPOSE_PROJECT_NAME: mindbase-fullstack-e2e-${{ github.run_id }}
+      POSTGRES_PASSWORD: mindbase-e2e-postgres-password
+      AUTH_SECRET_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      FRONTEND_ORIGINS: http://localhost:5173
+      FRONTEND_PUBLIC_URL: http://localhost:5173
+      EMAIL_VERIFICATION_REQUIRED: "false"
+      REFRESH_TOKEN_COOKIE_SECURE: "false"
+      VITE_API_URL: http://localhost:8000
+      GEMINI_API_KEY: ci-mocked-gemini-key
+      E2E_EMAIL: mindbase-e2e-${{ github.run_id }}@example.com
+      E2E_REGISTER_EMAIL: mindbase-register-${{ github.run_id }}@example.com
+      E2E_PASSWORD: "Mindbase-E2E-Password-2026!"
     defaults:
       run:
         working-directory: frontend
@@ -33,7 +60,122 @@ jobs:
         run: npm ci
 
       - name: Check TypeScript and build frontend
-        run: npm run build
+        run: VITE_API_URL=http://localhost:4173 npm run build
 
       - name: Lint frontend
         run: npm run lint
+
+      - name: Start production preview for browser tests
+        run: |
+          npm run preview -- --host 0.0.0.0 --port 4173 > /tmp/mindbase-preview.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/ -o /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/mindbase-preview.log
+          exit 1
+
+      - name: Run browser E2E smoke tests
+        run: |
+          docker run --rm --network host \
+            -e BASE_URL=http://localhost:4173 \
+            -v "$GITHUB_WORKSPACE/frontend/e2e:/e2e:ro" \
+            -w /e2e \
+            mcr.microsoft.com/playwright:v1.56.1-noble \
+            bash -lc 'npm install --global playwright@1.56.1 && NODE_PATH="$(npm root -g)" node smoke.cjs'
+
+      - name: Build frontend container image
+        run: docker build --build-arg VITE_API_URL=http://localhost:8000 -t mindbase-frontend:ci .
+
+      - name: Smoke test frontend container
+        run: |
+          set -eux
+          docker run --detach --name mindbase-frontend-smoke --publish 127.0.0.1:8080:80 mindbase-frontend:ci
+          trap 'docker rm --force mindbase-frontend-smoke >/dev/null 2>&1 || true' EXIT
+
+          for attempt in $(seq 1 15); do
+            if curl --fail --silent http://127.0.0.1:8080/ -o /tmp/mindbase-index.html; then
+              break
+            fi
+            sleep 1
+          done
+
+          # The app shell and SPA fallback must both serve the built entry point.
+          grep -q 'id="root"' /tmp/mindbase-index.html
+          curl --fail --silent http://127.0.0.1:8080/documents/42 -o /tmp/mindbase-route.html
+          grep -q 'id="root"' /tmp/mindbase-route.html
+
+          # Normalize CRLF response headers before exact assertions.
+          curl --fail --silent --dump-header /tmp/mindbase-root.headers -o /dev/null http://127.0.0.1:8080/
+          curl --fail --silent --dump-header /tmp/mindbase-route.headers -o /dev/null http://127.0.0.1:8080/documents/42
+          for headers in /tmp/mindbase-root.headers /tmp/mindbase-route.headers; do
+            tr -d '\r' < "$headers" > "$headers.normalized"
+            headers="$headers.normalized"
+            grep -Eiq '^X-Content-Type-Options: nosniff$' "$headers"
+            grep -Eiq '^X-Frame-Options: DENY$' "$headers"
+            grep -Eiq '^Referrer-Policy: strict-origin-when-cross-origin$' "$headers"
+            grep -Eiq '^Permissions-Policy: camera=\(\), microphone=\(\), geolocation=\(\)$' "$headers"
+            grep -Eiq "^Content-Security-Policy:.*default-src 'self'.*object-src 'none'.*frame-ancestors 'none'.*script-src 'self'" "$headers"
+            grep -Eiq "^Content-Security-Policy:.*connect-src 'self' http://localhost:8000" "$headers"
+          done
+
+          # HTML must be revalidated, while fingerprinted build assets are immutable.
+          tr -d '\r' < /tmp/mindbase-root.headers > /tmp/mindbase-root.normalized
+          grep -Eiq '^Cache-Control: no-cache$' /tmp/mindbase-root.normalized
+          asset_path="$(grep -oE '/assets/[^"]+\.(js|css)' /tmp/mindbase-index.html | head -n 1)"
+          test -n "$asset_path"
+          curl --fail --silent --dump-header /tmp/mindbase-asset.headers -o /dev/null "http://127.0.0.1:8080$asset_path"
+          tr -d '\r' < /tmp/mindbase-asset.headers > /tmp/mindbase-asset.normalized
+          grep -Eiq '^Cache-Control: public, max-age=31536000, immutable$' /tmp/mindbase-asset.normalized
+          grep -Eiq '^Permissions-Policy: camera=\(\), microphone=\(\), geolocation=\(\)$' /tmp/mindbase-asset.normalized
+          grep -Eiq "^Content-Security-Policy:.*default-src 'self'.*object-src 'none'.*frame-ancestors 'none'.*script-src 'self'" /tmp/mindbase-asset.normalized
+          grep -Eiq "^Content-Security-Policy:.*connect-src 'self' http://localhost:8000" /tmp/mindbase-asset.normalized
+
+      - name: Validate full-stack E2E harness and Compose configuration
+        working-directory: ${{ github.workspace }}
+        run: |
+          bash -n scripts/seed_fullstack_e2e.sh
+          node --check frontend/e2e/fullstack.cjs
+          docker compose config --quiet
+
+      - name: Start full-stack Compose services
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker compose build api frontend
+          docker compose up --detach --wait --wait-timeout 120 db
+          docker compose run --rm --no-deps api python -c "import os, psycopg2; from sqlalchemy.engine import make_url; u=make_url(os.environ['DATABASE_URL']); c=psycopg2.connect(host=u.host, port=u.port or 5432, dbname=u.database, user=u.username, password=u.password); c.close(); print('API container PostgreSQL credentials verified')"
+          docker compose up --detach --wait --wait-timeout 300 api frontend || (docker compose ps --all; docker compose logs --no-color api db; exit 1)
+          curl --fail --silent http://127.0.0.1:8000/ready
+          curl --fail --silent http://127.0.0.1:5173/ -o /dev/null
+
+      - name: Verify production API image uses CPU-only PyTorch
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker compose exec -T api python -c "import torch; assert torch.version.cuda is None; print('CPU-only PyTorch:', torch.__version__)"
+
+      - name: Seed real API account and PostgreSQL document
+        working-directory: ${{ github.workspace }}
+        run: bash scripts/seed_fullstack_e2e.sh
+
+      - name: Run full-stack browser journey
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker run --rm --network host --ipc=host \
+            -e BASE_URL=http://localhost:5173 \
+            -e API_URL=http://localhost:8000 \
+            -e E2E_EMAIL \
+            -e E2E_PASSWORD \
+            -e E2E_REGISTER_EMAIL \
+            -e E2E_DOCUMENT_ID \
+            -e E2E_CHUNK_ID \
+            -v "$GITHUB_WORKSPACE/frontend/e2e:/e2e:ro" \
+            -w /e2e \
+            mcr.microsoft.com/playwright:v1.56.1-noble \
+            bash -lc 'npm install --global playwright@1.56.1 && NODE_PATH="$(npm root -g)" node fullstack.cjs'
+
+      - name: Stop full-stack Compose services
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: docker compose down --volumes --remove-orphans || true

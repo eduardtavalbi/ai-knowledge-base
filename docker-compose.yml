@@ -1,7 +1,6 @@
 services:
   db:
     image: pgvector/pgvector:pg17
-    container_name: ai_knowledge_base_vector_test
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-knowledge_base}
@@ -20,7 +19,6 @@ services:
 
   api:
     build: .
-    container_name: ai_knowledge_base_api
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-knowledge_base}
@@ -80,6 +78,24 @@ services:
       db:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:5173:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   postgres_data:
-    name: ai_knowledge_base_vector_data

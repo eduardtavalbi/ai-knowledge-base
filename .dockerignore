@@ -15,6 +15,13 @@ __pycache__/
 .pytest*
 
 # Frontend build artifacts are not part of the backend image.
+frontend/
+tests/
+docs/
+scripts/
+.github/
+coverage/
+htmlcov/
 node_modules/
 frontend/node_modules/
 frontend/dist/
