@@ -1,0 +1,11 @@
+[Unit]
+Description=Run a Mindbase off-site restore drill every day
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=10m
+Persistent=true
+Unit=mindbase-offsite-restore-drill.service
+
+[Install]
+WantedBy=timers.target
