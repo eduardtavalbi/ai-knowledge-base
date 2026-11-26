@@ -88,7 +88,7 @@ PR #7 was squash-merged into `main` at `f926111790ebf84102626b717621808e45d6e764
 | Frontend product flows | React + TypeScript + Vite; PR #8 adds accessible mobile navigation and duplicate-export prevention; PR #11 provides a containerized Nginx frontend with CSP/security headers | Mocked-API UI E2E and a full-stack Compose browser journey against real FastAPI/PostgreSQL now cover auth, refresh, search, upload, edit, delete, export and tenant isolation |
 | RAG quality | Multilingual embeddings, hybrid PostgreSQL/pgvector + FTS, RRF, citation validation and abstention tests; real-embedding benchmark v2 now reports Recall@5/MRR@5 and no-answer retrieval | Expand from synthetic to reviewed anonymized domain documents; evaluate live answer grounding, citations and abstention |
 | Security & reliability | Tenant isolation, auth/session/recovery, parser limits, upload size/rate limits, transaction rollback and concurrency have substantial tests | Finish targeted security review; preserve verified work and reopen only on concrete regression |
-| Infrastructure & operations | Docker Compose, migrations, health/readiness, frontend container, and local PostgreSQL backup/restore with corruption rejection are integrated and CI-verified | PR #13 implements age encryption, rclone off-site upload, retention and restore drills; exact-head CI is running. Provider provisioning, scheduler/alerts, immutable storage and measured RTO remain |
+| Infrastructure & operations | Docker Compose, migrations, health/readiness, frontend container, and local PostgreSQL backup/restore with corruption rejection are integrated and CI-verified | PR #13 implements age encryption, rclone off-site upload, retention, restore drills and systemd backup/verification timers; exact-head CI is running. Provider provisioning, alerting, immutable storage and measured RTO remain |
 | Demo & release readiness | README/setup instructions, deployment container and operational recovery runbook exist | Clean-start production-like install, browser smoke suite, demo account/dataset, reverse-proxy/TLS review and release checklist |
 
 This area inventory is not yet a percentage. Convert it into a weighted deliverable checklist after inspecting the actual frontend, API, RAG evaluation and deployment workflows. Do not infer completion from README claims alone.
@@ -136,13 +136,13 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 - Backend CI #439 passed on exact PR #10 head `308e2f7`: **204 tests in 8.31s**, isolated Compose PostgreSQL, migrations, backup creation, checksum, temporary restore, Alembic version `9f4c2e7a1b60`, `public.documents` verification and corrupted-archive rejection. Frontend CI #275 passed.
 - CI isolation uses unique Compose project/volume/host port per run while preserving the existing production volume name and default port.
 - PR #10 local backup/restore is integrated into `main` and its exact-head CI passed: PostgreSQL archive creation, SHA-256 verification, temporary restore, Alembic/schema checks and corrupted-archive rejection.
-- PR #13 implements client-side age encryption, rclone upload, encrypted-object checksums, age-based retention and a restore drill that never overwrites the live database. Backend CI #527 is currently running on exact head `2d4d7eb`.
+- PR #13 implements client-side age encryption, rclone upload, encrypted-object checksums, age-based retention and a restore drill that never overwrites the live database. Backend CI #527 passed on exact head `2d4d7eb` (218 existing tests plus the new off-site backup tests); later commits add remote-path validation, robust remote listing, and systemd scheduling, with a fresh exact-head CI run pending.
 - Deployment still needs a configured off-site provider/remote, protected key and credentials, host scheduling and alerting. The six-hour RPO is only a proposed ceiling; RTO must be measured in a real recovery exercise.
 
 
 ## Next actions — continue here
 
-1. Finish PR #13: inspect Backend CI #527 on exact head `2d4d7eb`, fix any failures, and rerun checks on the corrected head. Keep it Draft/unmerged until verification is complete.
+1. Finish PR #13: verify the newest Backend CI run on the final PR head, review its results and fix any failures. Keep it Draft/unmerged until verification is complete.
 2. Configure the selected off-site provider, protected age identity, rclone credentials, host scheduler and alerting in the deployment environment. Run a real restore drill and measure RPO/RTO; do not treat the proposed six-hour interval as a guarantee.
 3. Complete deployment operations: HTTPS reverse proxy/TLS/HSTS, production secret injection, structured log collection, monitoring/alerting, and scheduled audit-retention cleanup.
 4. Evaluate live answer-generation quality separately from the synthetic retrieval benchmark, including grounded answers, citations, abstention, conflicting sources, and Russian/English behavior.
