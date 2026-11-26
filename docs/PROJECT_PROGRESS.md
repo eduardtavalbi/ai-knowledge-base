@@ -131,21 +131,21 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 - It reports Recall@5 and MRR@5 plus per-query relevant rank and retrieved titles. Unit tests validate corpus labels and metric arithmetic.
 - Backend CI #368 passed 208 tests and Frontend CI #239 passed on the exact PR #12 head. The benchmark itself requires the full ML dependencies and a disposable PostgreSQL database; no real-embedding score is claimed yet.
 
-## Operations audit — initial findings
+## Operations audit — active verification
 
 - `/health` is a liveness check; `/ready` checks PostgreSQL connectivity. Compose starts the API only after database health and applies Alembic migrations before Uvicorn.
-- README previously recommended backups and restore tests without giving a reproducible procedure. PR #10 adds a Docker Compose-specific custom-format backup, temporary-database restore verification, live restore steps and recovery caveats.
-- PR #10 is documentation only; the restore procedure still needs execution against a disposable PostgreSQL database. Do not claim backup/restore is operationally verified until that succeeds.
+- PR #10 now includes executable `scripts/backup_postgres.sh` and `scripts/verify_postgres_backup.sh`. The first creates and validates a custom-format dump plus SHA-256 checksum; the second restores into a temporary database and verifies the Alembic version and `public.documents` table before cleanup.
+- Backend CI #393/#399 exposed authentication/resource-isolation problems in the Compose verification job. The latest revision uses a unique Compose project, volume and host port per workflow run; CI #405 is executing. The backup/restore workflow is not verified until that job passes.
+- The shell scripts both pass `bash -n`; local Docker execution is unavailable, so the CI run is the required end-to-end verification.
 
 ## Next actions — continue here
 
-1. PR #11's container image build and Nginx SPA smoke test passed on exact head `645fa0a`; review production port binding and reverse-proxy configuration before deployment.
-2. PR #12's dataset/metric tests passed on exact head `c92f382`; the opt-in benchmark still needs a real-embedding run against a disposable PostgreSQL database.
-3. Execute PR #10's temporary-database restore procedure when a disposable PostgreSQL environment is available; do not claim recovery is verified before that.
-4. Run PR #12's opt-in benchmark with the full SentenceTransformers model and a disposable PostgreSQL database; record actual Recall@5/MRR@5 rather than estimating them.
-5. Continue browser-level frontend journey testing; PR #11 supplies container deployment but build/smoke tests do not replace auth and document-flow E2E coverage.
-6. Finish targeted PR #7 security/reliability review; the Retry-After race fix is verified on PR #7 head `04c298b`.
-7. Keep PRs #7–#12 Draft/unmerged until explicit user authorization. Do not calculate an overall percentage until all six areas have auditable deliverable inventories.
+1. PR #10: verify the latest isolated Compose backup/restore CI #405 on head `379f66a`; fix any remaining issue and do not claim recovery readiness until the temporary restore succeeds.
+2. PR #12: run the real multilingual embedding benchmark on the latest head; the first run exposed missing ORM model registration, now fixed with explicit session-model imports and a mapper-configuration regression test. Record actual Recall@5/MRR@5 from the uploaded report.
+3. PR #11: the frontend container now builds a restrictive CSP `connect-src` from the configured `VITE_API_URL`, rather than allowing arbitrary HTTP(S) destinations. Frontend CI #262 and Backend CI #403 are running on the updated head `f126903`; verify both before marking this change complete.
+4. Continue browser-level frontend journey testing; container smoke tests do not replace auth, session refresh, document CRUD/upload, search, AI answer and export E2E coverage.
+5. Finish targeted PR #7 security/reliability review; the Retry-After race fix remains verified, and do not reopen completed work without a concrete regression.
+6. Keep PRs #7–#12 Draft/unmerged until explicit user authorization. Do not calculate an overall percentage until all six areas have auditable deliverable inventories.
 
 ## Update log
 
@@ -157,3 +157,7 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 | 2026-11-26 | Corrected stale-window `Retry-After` calculation to use the effective active bucket; added delayed-request regression test. | Commits `12514a0` and `4be5126`; Backend CI #359 passed on head `c41f3c1`: 204 tests in 7.87s; Frontend CI #230 passed. |
 | 2026-11-26 | Added a PostgreSQL backup/restore runbook and README link; added strict Russian/English RAG abstention regression coverage; improved mobile navigation and export UX. | PR #8 head `ebff9b1`: Backend #362 and Frontend #233 passed; PR #9 head `44e6ce3`: Backend #364 (207 tests) and Frontend #235 passed; PR #10 head `db313fb`, restore procedure not yet executed. |
 | 2026-11-26 | Added containerized frontend deployment and an opt-in bilingual retrieval benchmark. | PR #11 head `645fa0a`, Backend #366 (189 tests) and Frontend #237 passed; PR #12 head `c92f382`, Backend #368 (208 tests) and Frontend #239 passed; real-embedding benchmark not yet run. |
+| 2026-11-26 | Added CI branch filters for stacked feature PRs and a dedicated real-embedding RAG evaluation workflow with a disposable pgvector database and JSON artifact. | PR #7 head `09227f7`; Backend CI #395 and Frontend CI #260 passed; RAG workflow #1 exposed missing `UserSession` mapper registration. |
+| 2026-11-26 | Added explicit `UserSession`/refresh-token model imports to the benchmark and a mapper-configuration regression test. | PR #12 commits `9f3cba1` and `34a9f1c`; RAG benchmark reruns #2/#3 pending; no metric is claimed yet. |
+| 2026-11-26 | Added executable PostgreSQL backup and temporary restore verification scripts; isolated Compose CI resources by run ID after authentication collisions. | PR #10 head `379f66a`; both scripts pass `bash -n`; CI #405 pending after earlier failures #393/#399. |
+| 2026-11-26 | Hardened frontend container CSP/Permissions-Policy and restricted `connect-src` to the configured API origin. | PR #11 head `f126903`; previous Frontend CI #258 and Backend CI #391 passed before the final CSP-origin tightening; latest #262/#403 pending. |
