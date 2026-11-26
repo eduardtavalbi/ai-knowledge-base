@@ -25,7 +25,7 @@ fi
 document_content="A seeded full-stack E2E document."
 content_sha256="$(printf '%s' "$document_content" | sha256sum | cut -d ' ' -f 1)"
 document_id="$(docker compose exec -T db psql \
-  -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -Atc \
+  -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -qAtc \
   "INSERT INTO documents (user_id, title, content, content_sha256) \
    VALUES ($user_id, 'E2E Seed Document', '$document_content', '$content_sha256') \
    RETURNING id")"
@@ -36,7 +36,7 @@ if [[ ! "$document_id" =~ ^[0-9]+$ ]]; then
 fi
 
 chunk_id="$(docker compose exec -T db psql \
-  -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -Atc \
+  -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -qAtc \
   "INSERT INTO document_chunks (document_id, chunk_index, content) \
    VALUES ($document_id, 0, '$document_content') \
    RETURNING id")"
