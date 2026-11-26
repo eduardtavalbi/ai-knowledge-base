@@ -15,6 +15,7 @@ on:
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -33,10 +34,31 @@ jobs:
         run: npm ci
 
       - name: Check TypeScript and build frontend
-        run: npm run build
+        run: VITE_API_URL=http://localhost:4173 npm run build
 
       - name: Lint frontend
         run: npm run lint
+
+      - name: Start production preview for browser tests
+        run: |
+          npm run preview -- --host 0.0.0.0 --port 4173 > /tmp/mindbase-preview.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/ -o /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/mindbase-preview.log
+          exit 1
+
+      - name: Run browser E2E smoke tests
+        run: |
+          docker run --rm --network host \
+            -e BASE_URL=http://localhost:4173 \
+            -v "$GITHUB_WORKSPACE/frontend/e2e:/e2e:ro" \
+            -w /e2e \
+            mcr.microsoft.com/playwright:v1.56.1-noble \
+            bash -lc 'npm install --global playwright@1.56.1 && NODE_PATH="$(npm root -g)" node smoke.cjs'
 
       - name: Build frontend container image
         run: docker build --build-arg VITE_API_URL=http://localhost:8000 -t mindbase-frontend:ci .
