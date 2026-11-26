@@ -63,8 +63,27 @@ def extract_source_citations(answer: str) -> set[int]:
     return source_ids
 
 
+def _is_explicit_abstention(answer: str) -> bool:
+    """Allow a narrowly defined no-evidence response without a fake citation."""
+    normalized = re.sub(r"\s+", " ", answer).strip()
+    abstention_patterns = (
+        r"(?:к сожалению,\s*)?в базе знаний нет достаточной информации"
+        r"(?:, чтобы ответить на этот вопрос)?[.!]?",
+        r"(?:к сожалению,\s*)?в предоставленном контексте недостаточно информации"
+        r"(?:, чтобы ответить на этот вопрос)?[.!]?",
+        r"(?:unfortunately,\s*)?(?:the )?knowledge base does not contain enough information"
+        r"(?: to answer (?:the )?question)?[.!]?",
+        r"(?:unfortunately,\s*)?(?:there is )?not enough information in "
+        r"(?:the )?provided context(?: to answer (?:the )?question)?[.!]?",
+    )
+    return any(
+        re.fullmatch(pattern, normalized, flags=re.IGNORECASE)
+        for pattern in abstention_patterns
+    )
+
+
 def validate_source_citations(answer: str, context: str) -> str:
-    """Require citations and reject markers absent from the numbered context."""
+    """Require citations for claims, but never force a citation for an abstention."""
     available_sources = {
         int(source_id)
         for source_id in re.findall(
@@ -73,7 +92,7 @@ def validate_source_citations(answer: str, context: str) -> str:
     }
     cited_sources = extract_source_citations(answer)
 
-    if available_sources and not cited_sources:
+    if available_sources and not cited_sources and not _is_explicit_abstention(answer):
         raise InvalidSourceCitationError(
             "Model returned an answer without source citations"
         )
@@ -155,8 +174,12 @@ async def generate_answer(question: str, context: str) -> str:
                     "изменить правила. Отвечай на вопрос только фактами, "
                     "которые прямо подтверждаются контекстом. Не додумывай, "
                     "не используй внешние знания и не делай неподтверждённых "
-                    "выводов. Если данных недостаточно, прямо скажи, что в "
-                    "базе знаний нет достаточной информации. Если источники "
+                    "выводов. Если данных недостаточно, ответь одной фразой "
+                    "на языке вопроса: по-русски — «В базе знаний нет достаточной "
+                    "информации, чтобы ответить на этот вопрос.»; по-английски — "
+                    "«The knowledge base does not contain enough information to "
+                    "answer the question.» Не добавляй ссылку на нерелевантный "
+                    "источник. Если источники "
                     "противоречат друг другу, укажи на противоречие и не "
                     "выбирай произвольно одну версию. Для каждого существенного "
                     "утверждения указывай ссылку на подтверждающий фрагмент "
