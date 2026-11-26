@@ -171,7 +171,7 @@ async function main() {
     await page.getByRole('button', { name: 'Выйти' }).click();
     await page.getByLabel('Email').waitFor();
 
-    console.log('Frontend E2E passed: login, refresh, authenticated document load, hybrid-search UI, upload, edit, export and logout.');
+    console.log('Frontend E2E passed: login, refresh, authenticated document load, hybrid-search UI, upload, edit, delete, export and logout.');
   } finally {
     await browser.close();
   }
