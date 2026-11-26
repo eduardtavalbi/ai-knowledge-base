@@ -83,6 +83,7 @@ async function main() {
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Удалить документ E2E Seed Document' }).click();
     await page.getByText('E2E Seed Document', { exact: true }).waitFor({ state: 'detached' });
+    await page.getByText('Документы пока не загружены.', { exact: true }).waitFor();
 
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Экспорт данных' }).click();
@@ -99,6 +100,7 @@ async function main() {
     await page.getByRole('button', { name: 'Создать аккаунт' }).click();
     await page.getByRole('button', { name: 'Семантический поиск' }).waitFor();
     await page.getByRole('button', { name: /Моя база знаний/ }).click();
+    await page.getByText('Документы пока не загружены.', { exact: true }).waitFor();
     assert.equal(await page.getByText('E2E Seed Document', { exact: true }).count(), 0);
 
     await page.getByRole('button', { name: 'Выйти' }).click();
