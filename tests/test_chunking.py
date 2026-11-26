@@ -77,3 +77,27 @@ def test_long_text_chunks_cover_entire_text():
     assert chunks[0] == text[:500]
     assert chunks[1] == text[400:900]
     assert chunks[-1] == text[-400:]
+
+
+
+@pytest.mark.parametrize(
+    ("text_length", "expected_lengths"),
+    [
+        (900, [500, 500]),
+        (901, [500, 500, 101]),
+        (1000, [500, 500, 200]),
+    ],
+)
+def test_oversized_paragraph_does_not_emit_redundant_tail_chunk(
+    text_length,
+    expected_lengths,
+):
+    text = "x" * text_length
+
+    chunks = split_text(text, chunk_size=500, overlap=100)
+
+    assert [len(chunk) for chunk in chunks] == expected_lengths
+    assert "".join(
+        chunk if index == 0 else chunk[100:]
+        for index, chunk in enumerate(chunks)
+    ) == text
