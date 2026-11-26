@@ -39,9 +39,9 @@ jobs:
       REFRESH_TOKEN_COOKIE_SECURE: "false"
       VITE_API_URL: http://localhost:8000
       GEMINI_API_KEY: ci-mocked-gemini-key
-      E2E_EMAIL: mindbase-e2e-${{ github.run_id }}@example.test
-      E2E_REGISTER_EMAIL: mindbase-register-${{ github.run_id }}@example.test
-      E2E_PASSWORD: Mindbase-E2E-Password-2026!
+      E2E_EMAIL: mindbase-e2e-${{ github.run_id }}@example.com
+      E2E_REGISTER_EMAIL: mindbase-register-${{ github.run_id }}@example.com
+      E2E_PASSWORD: "Mindbase-E2E-Password-2026!"
     defaults:
       run:
         working-directory: frontend
