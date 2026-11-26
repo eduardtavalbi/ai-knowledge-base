@@ -1,0 +1,14 @@
+[Unit]
+Description=Verify and restore the newest encrypted Mindbase backup into a temporary database
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mindbase
+Group=docker
+WorkingDirectory=/opt/mindbase
+EnvironmentFile=/etc/mindbase/offsite-backup.env
+ExecStart=/usr/bin/bash /opt/mindbase/scripts/offsite_postgres_backup.sh verify-latest
+UMask=0077
