@@ -133,6 +133,13 @@ jobs:
           grep -Eiq "^Content-Security-Policy:.*default-src 'self'.*object-src 'none'.*frame-ancestors 'none'.*script-src 'self'" /tmp/mindbase-asset.normalized
           grep -Eiq "^Content-Security-Policy:.*connect-src 'self' http://localhost:8000" /tmp/mindbase-asset.normalized
 
+      - name: Validate full-stack E2E harness and Compose configuration
+        working-directory: ${{ github.workspace }}
+        run: |
+          bash -n scripts/seed_fullstack_e2e.sh
+          node --check frontend/e2e/fullstack.cjs
+          docker compose config --quiet
+
       - name: Start full-stack Compose services
         working-directory: ${{ github.workspace }}
         run: |
