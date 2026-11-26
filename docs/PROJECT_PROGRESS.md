@@ -142,7 +142,7 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 
 ## Next actions — continue here
 
-1. Finish PR #13: verify the newest Backend CI run on the final PR head, review its results and fix any failures. Keep it Draft/unmerged until verification is complete.
+1. PR #13 is implemented and verified on code head `e054c77`; keep it Draft/unmerged pending explicit integration authorization. Re-run CI if any implementation changes are made.
 2. Configure the selected off-site provider, protected age identity, rclone credentials, host scheduler and alerting in the deployment environment. Run a real restore drill and measure RPO/RTO; do not treat the proposed six-hour interval as a guarantee.
 3. Complete deployment operations: HTTPS reverse proxy/TLS/HSTS, production secret injection, structured log collection, monitoring/alerting, and scheduled audit-retention cleanup.
 4. Evaluate live answer-generation quality separately from the synthetic retrieval benchmark, including grounded answers, citations, abstention, conflicting sources, and Russian/English behavior.
@@ -174,4 +174,4 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 | 2026-11-26 | Merged PR #12 after combining its bilingual query-expansion changes with the already merged safe-abstention implementation. | Merge commit #12 `0cebc1f`; Backend CI #510: 216 tests; RAG evaluation #21: Recall@5 1.00, MRR@5 0.9286, no-answer retrieval 0/3. |
 | 2026-11-26 | Merged PR #11 after full-stack Compose verification and fixing production Alembic password rendering. | Merge commit #11 `7a4b761`; Frontend CI #320 passed full-stack registration/login/refresh/document/export/tenant-isolation journey; Backend CI #518: 218 tests; API image verified PyTorch `2.9.1+cpu`. |
 | 2026-11-26 | Rebased PR #10 backup/restore automation onto current main while preserving PR #11 Compose deployment and PR #12 RAG changes. | New tree is based on main `7a4b761`; backup/restore CI pending on new exact head. |
-| 2026-11-26 | Implemented the first provider-neutral encrypted off-site backup workflow. | Branch `feat/offsite-backup-reliability`: age client-side encryption, rclone upload, encrypted-object SHA-256, age-based retention, fallback across older archives during restore drills, deployment runbook and CI shell syntax checks. Exact-head CI and behavior tests pending. |
+| 2026-11-26 | Implemented and verified encrypted off-site PostgreSQL backup and scheduled restore drills. | PR #13 code head `e054c77`; Backend CI #545 passed: **221 tests in 8.76s**, shell syntax and systemd calendar validation, PostgreSQL/migrations, backup restore and corrupt-archive rejection. The subsequent progress-ledger checkpoint is documentation-only. |
