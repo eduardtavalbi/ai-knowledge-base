@@ -44,9 +44,9 @@ If an area has not yet been fully inventoried, label its score **unassessed**; d
 
 ### Repository state
 
-- Main at integration start: `7a4b761341dbd64c8773ec7fcd725de09d30950b`.
+- Current `main`: `c95f13c1f901725df4b19652ddd658c7443ac2af`; PRs #7–#12 are integrated, including PR #10 backup/restore automation.
 - PRs #7, #8, #9, #11 and #12 are merged into `main`; exact merge commits are recorded in the integration log below.
-- PR #10, PostgreSQL backup/restore automation, is the only remaining open PR from this integration batch. It is being rebased directly onto current `main` so it cannot reintroduce or overwrite changes from the already merged branches.
+- No integration-batch PRs remain open. The next active work is encrypted off-site backup and restore reliability on `feat/offsite-backup-reliability`.
 - The full-stack deployment path from PR #11 is verified: Compose PostgreSQL/API/Nginx startup, Alembic migrations, readiness, CPU-only PyTorch, real account/document seeding, and browser-level registration/login/refresh/read/delete/export/tenant-isolation.
 ### Completed and integrated
 
@@ -171,4 +171,4 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 | 2026-11-26 | Merged PR #12 after combining its bilingual query-expansion changes with the already merged safe-abstention implementation. | Merge commit #12 `0cebc1f`; Backend CI #510: 216 tests; RAG evaluation #21: Recall@5 1.00, MRR@5 0.9286, no-answer retrieval 0/3. |
 | 2026-11-26 | Merged PR #11 after full-stack Compose verification and fixing production Alembic password rendering. | Merge commit #11 `7a4b761`; Frontend CI #320 passed full-stack registration/login/refresh/document/export/tenant-isolation journey; Backend CI #518: 218 tests; API image verified PyTorch `2.9.1+cpu`. |
 | 2026-11-26 | Rebased PR #10 backup/restore automation onto current main while preserving PR #11 Compose deployment and PR #12 RAG changes. | New tree is based on main `7a4b761`; backup/restore CI pending on new exact head. |
-| 2026-11-26 | Rebasing and synchronizing the PostgreSQL backup/restore PR directly onto main after the frontend, security and RAG PRs were merged. | PR #10 rebased commit `0df7661` (parent `7a4b761`); Compose volume remains project-scoped and DB port configurable; exact-head CI queued after ledger checkpoint. |
+| 2026-11-26 | Implemented the first provider-neutral encrypted off-site backup workflow. | Branch `feat/offsite-backup-reliability`: age client-side encryption, rclone upload, encrypted-object SHA-256, age-based retention, fallback across older archives during restore drills, deployment runbook and CI shell syntax checks. Exact-head CI and behavior tests pending. |
