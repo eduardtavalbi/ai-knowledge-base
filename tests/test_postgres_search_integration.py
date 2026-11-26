@@ -234,6 +234,7 @@ async def test_postgres_semantic_candidate_query_can_use_hnsw_index(
 
     query_vector = "[" + ",".join(["1"] + ["0"] * 383) + "]"
     await postgres_session.execute(text("SET LOCAL enable_seqscan = off"))
+    await postgres_session.execute(text("SET LOCAL enable_sort = off"))
     plan = await postgres_session.execute(
         text(
             """
