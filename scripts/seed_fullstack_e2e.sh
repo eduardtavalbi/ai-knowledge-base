@@ -15,7 +15,7 @@ registration="$(curl --fail --silent --show-error \
 printf '%s\n' "$registration" | jq -e '.email_verified == true' >/dev/null
 
 user_id="$(docker compose exec -T db psql \
-  -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -Atc \
+  -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -qAtc \
   "SELECT id FROM users WHERE email = '$E2E_EMAIL'")"
 if [[ ! "$user_id" =~ ^[0-9]+$ ]]; then
   echo "Could not resolve registered E2E user id" >&2
@@ -30,6 +30,7 @@ document_id="$(docker compose exec -T db psql \
    VALUES ($user_id, 'E2E Seed Document', '$document_content', '$content_sha256') \
    RETURNING id")"
 if [[ ! "$document_id" =~ ^[0-9]+$ ]]; then
+  printf 'Unexpected document id output: %q\n' "$document_id" >&2
   echo "Could not create E2E seed document" >&2
   exit 1
 fi
@@ -40,6 +41,7 @@ chunk_id="$(docker compose exec -T db psql \
    VALUES ($document_id, 0, '$document_content') \
    RETURNING id")"
 if [[ ! "$chunk_id" =~ ^[0-9]+$ ]]; then
+  printf 'Unexpected chunk id output: %q\n' "$chunk_id" >&2
   echo "Could not create E2E seed chunk" >&2
   exit 1
 fi
