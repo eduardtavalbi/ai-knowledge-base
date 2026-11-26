@@ -220,6 +220,28 @@ From the project root, with the virtual environment activated:
 python -m pytest -v
 ```
 
+## RAG Retrieval Evaluation
+
+An opt-in bilingual retrieval benchmark measures **Recall@5** and **MRR@5** on answerable queries, plus the context-retrieval rate for explicitly unanswerable queries. It uses the production multilingual embedding model and PostgreSQL hybrid vector/full-text retrieval. It disables Gemini query rewriting to isolate retrieval ranking; it does not measure answer-generation quality.
+
+The benchmark requires the full Python requirements, including `sentence-transformers`, and a disposable PostgreSQL database with permission to create the `vector` extension and temporary schemas. The current version-2 corpus contains 17 queries (14 answerable and 3 unanswerable); use the latest successful RAG evaluation workflow artifact for its metrics, not the earlier 8-query baseline. It creates and drops an isolated schema; it does not use or modify the application database configured for production.
+
+Linux/macOS:
+
+```bash
+export PG_TEST_DATABASE_URL="postgresql+asyncpg://postgres:password@localhost:5432/mindbase_eval"
+python -m scripts.evaluate_rag_retrieval
+```
+
+PowerShell:
+
+```powershell
+$env:PG_TEST_DATABASE_URL = "postgresql+asyncpg://postgres:password@localhost:5432/mindbase_eval"
+python -m scripts.evaluate_rag_retrieval
+```
+
+The versioned synthetic corpus in `tests/fixtures/rag_retrieval_eval.json` includes Russian/English queries, near-duplicate policy distractors, a superseded policy and no-answer cases. Replace or extend it with representative, anonymized documents and reviewed relevance labels before treating the scores as a product-quality benchmark. Do not point this script at production. The `RAG retrieval evaluation` GitHub Actions workflow runs the same benchmark against a disposable pgvector PostgreSQL service on changes to the retrieval implementation or evaluation corpus, and stores the JSON report as a workflow artifact. The unanswerable-query context retrieval rate measures retrieval false positives only; it does not measure whether the generated answer correctly abstains.
+
 ## API Overview
 
 | Method | Endpoint | Description |

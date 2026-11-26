@@ -553,3 +553,73 @@ async def test_postgres_retrieval_never_returns_another_users_chunks(postgres_se
 
     assert [item["chunk_id"] for item in results] == [own_chunk.id]
     assert all(item["document_id"] == own_document.id for item in results)
+
+@pytest.mark.asyncio
+async def test_currentness_query_prefers_active_policy_but_keeps_historical_search(
+    postgres_session,
+):
+    superseded = Document(
+        user_id=1,
+        title="Annual Leave Policy 2024 (superseded)",
+        content=(
+            "Annual leave policy grants employees twenty days of paid leave. "
+            "This policy is superseded by the 2026 policy."
+        ),
+    )
+    current = Document(
+        user_id=1,
+        title="Annual Leave Policy 2026",
+        content="Annual leave policy grants employees twenty days of paid leave.",
+    )
+    postgres_session.add_all([superseded, current])
+    await postgres_session.flush()
+
+    superseded_chunk = DocumentChunk(
+        document_id=superseded.id,
+        chunk_index=0,
+        content="Annual leave policy grants employees twenty days of paid leave.",
+        embedding=embedding(1.0),
+    )
+    current_chunk = DocumentChunk(
+        document_id=current.id,
+        chunk_index=0,
+        content="Annual leave policy grants employees twenty days of paid leave.",
+        embedding=embedding(0.999, 0.04),
+    )
+    postgres_session.add_all([superseded_chunk, current_chunk])
+    await postgres_session.commit()
+
+    with (
+        patch(
+            "app.services.llm.expand_search_queries",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.search.generate_embeddings",
+            return_value=[embedding(1.0)],
+        ),
+    ):
+        current_results = [
+            await search_document_chunks(
+                current_query,
+                postgres_session,
+                user_id=1,
+                limit=5,
+            )
+            for current_query in (
+                "What is the current annual leave policy?",
+                "Какая актуальная политика отпусков?",
+            )
+        ]
+        historical_results = await search_document_chunks(
+            "What did the 2024 annual leave policy say?",
+            postgres_session,
+            user_id=1,
+            limit=5,
+        )
+
+    for results in current_results:
+        assert results[0]["document_id"] == current.id
+        assert superseded.id in {item["document_id"] for item in results}
+    assert historical_results[0]["document_id"] == superseded.id
