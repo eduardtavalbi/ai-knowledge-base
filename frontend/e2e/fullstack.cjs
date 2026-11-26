@@ -82,7 +82,7 @@ async function main() {
     await page.getByRole('button', { name: 'Закрыть документ' }).click();
 
     page.once('dialog', (dialog) => dialog.accept());
-    await page.getByRole('button', { name: 'Удалить документ E2E Seed Document' }).click();
+    await page.getByRole('button', { name: 'Удалить E2E Seed Document' }).click();
     await page.getByText('E2E Seed Document', { exact: true }).waitFor({ state: 'detached' });
     await page.getByText('Документы пока не загружены.', { exact: true }).waitFor();
 
