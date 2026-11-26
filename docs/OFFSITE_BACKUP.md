@@ -12,7 +12,7 @@ This runbook adds client-side encryption and an off-site copy to the local Compo
 
 ## One-time host setup
 
-Install Docker Compose, age and rclone on the host that can reach the production Compose database. Generate an age key pair:
+Install Docker Compose, age and rclone on the host that can reach the production Compose database. Ensure the temporary staging directory used for plaintext dumps is on an encrypted filesystem or ephemeral storage; removing temporary files is not a secure-erasure guarantee. Generate an age key pair:
 
 ```bash
 sudo install -d -m 0700 /etc/mindbase
