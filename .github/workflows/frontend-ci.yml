@@ -147,6 +147,11 @@ jobs:
           curl --fail --silent http://127.0.0.1:8000/ready
           curl --fail --silent http://127.0.0.1:5173/ -o /dev/null
 
+      - name: Verify production API image uses CPU-only PyTorch
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker compose exec -T api python -c "import torch; assert torch.version.cuda is None; print('CPU-only PyTorch:', torch.__version__)"
+
       - name: Seed real API account and PostgreSQL document
         working-directory: ${{ github.workspace }}
         run: bash scripts/seed_fullstack_e2e.sh
