@@ -95,6 +95,11 @@ async function main() {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(documents.find((item) => item.id === 1)) });
       }
 
+      if (url.pathname === '/documents/2' && method === 'DELETE') {
+        documents = documents.filter((item) => item.id !== 2);
+        return route.fulfill({ status: 204 });
+      }
+
       if (url.pathname === '/auth/me/export' && method === 'GET') {
         return route.fulfill({
           status: 200,
@@ -153,6 +158,10 @@ async function main() {
     await page.getByRole('heading', { name: 'Security policy — updated' }).last().waitFor();
     await page.getByRole('button', { name: 'Закрыть документ' }).click();
     await page.getByText('Security policy — updated', { exact: true }).waitFor();
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: 'Удалить e2e-notes.txt' }).click();
+    await page.getByText('e2e-notes.txt', { exact: true }).waitFor({ state: 'detached' });
 
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Экспорт данных' }).click();
