@@ -43,14 +43,34 @@ jobs:
 
       - name: Smoke test frontend container
         run: |
+          set -eu
           docker run --detach --name mindbase-frontend-smoke --publish 127.0.0.1:8080:80 mindbase-frontend:ci
           trap 'docker rm --force mindbase-frontend-smoke >/dev/null 2>&1 || true' EXIT
+
           for attempt in $(seq 1 15); do
             if curl --fail --silent http://127.0.0.1:8080/ -o /tmp/mindbase-index.html; then
               break
             fi
             sleep 1
           done
+
+          # The app shell and SPA fallback must both serve the built entry point.
           grep -q 'id="root"' /tmp/mindbase-index.html
           curl --fail --silent http://127.0.0.1:8080/documents/42 -o /tmp/mindbase-route.html
           grep -q 'id="root"' /tmp/mindbase-route.html
+
+          # Security headers must be present on both the root and client-side routes.
+          curl --fail --silent --dump-header /tmp/mindbase-root.headers -o /dev/null http://127.0.0.1:8080/
+          curl --fail --silent --dump-header /tmp/mindbase-route.headers -o /dev/null http://127.0.0.1:8080/documents/42
+          for headers in /tmp/mindbase-root.headers /tmp/mindbase-route.headers; do
+            grep -Eiq '^X-Content-Type-Options: nosniff\r?$' "$headers"
+            grep -Eiq '^X-Frame-Options: DENY\r?$' "$headers"
+            grep -Eiq '^Referrer-Policy: strict-origin-when-cross-origin\r?$' "$headers"
+          done
+
+          # HTML must be revalidated, while fingerprinted build assets are immutable.
+          grep -Eiq '^Cache-Control: no-cache\r?$' /tmp/mindbase-root.headers
+          asset_path="$(grep -oE '/assets/[^"]+\.(js|css)' /tmp/mindbase-index.html | head -n 1)"
+          test -n "$asset_path"
+          curl --fail --silent --dump-header /tmp/mindbase-asset.headers -o /dev/null "http://127.0.0.1:8080$asset_path"
+          grep -Eiq '^Cache-Control: public, max-age=31536000, immutable\r?$' /tmp/mindbase-asset.headers
