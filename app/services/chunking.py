@@ -4,10 +4,15 @@ import re
 def _split_oversized_paragraph(paragraph: str, chunk_size: int, overlap: int) -> list[str]:
     """Split a long paragraph into bounded windows without dropping characters."""
     step = chunk_size - overlap
-    return [
-        paragraph[start : start + chunk_size]
-        for start in range(0, len(paragraph), step)
-    ]
+    chunks: list[str] = []
+    for start in range(0, len(paragraph), step):
+        chunks.append(paragraph[start : start + chunk_size])
+        # The previous window already covers the tail when it reaches the
+        # end of the paragraph. Do not emit a redundant, fully overlapping
+        # final chunk for lengths such as chunk_size + overlap.
+        if start + chunk_size >= len(paragraph):
+            break
+    return chunks
 
 
 def split_text(
