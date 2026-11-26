@@ -15,7 +15,7 @@ from sqlalchemy import pool
 from alembic import context
 
 from app.core.config import settings
-from sqlalchemy.engine import make_url
+from app.db.migration_url import render_alembic_database_url
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -24,11 +24,10 @@ config = context.config
 # Use the same database configured for the application, with a synchronous
 # driver because Alembic's online migration engine is synchronous.
 database_url_value = os.environ.get("DATABASE_URL") or settings.database_url
-database_url = make_url(database_url_value).set(drivername="postgresql+psycopg2")
 config.set_section_option(
     config.config_ini_section,
     "sqlalchemy.url",
-    str(database_url).replace("%", "%%"),
+    render_alembic_database_url(database_url_value),
 )
 
 # Interpret the config file for Python logging.
