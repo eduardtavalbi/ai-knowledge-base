@@ -15,7 +15,7 @@ COPY requirements-prod.txt .
 RUN pip install --no-cache-dir \
         --index-url https://download.pytorch.org/whl/cpu \
         --extra-index-url https://pypi.org/simple \
-        torch==2.9.0+cpu \
+        torch==2.9.1+cpu \
     && pip install --no-cache-dir -r requirements-prod.txt \
     && python -c "import torch; assert torch.version.cuda is None"
 
