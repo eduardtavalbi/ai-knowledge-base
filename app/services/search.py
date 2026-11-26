@@ -13,6 +13,33 @@ _NEGATION_PATTERN = re.compile(
     r"\b(?:not|no|never|without|cannot|can't|не|нет|ни|никогда|без)\b",
     re.IGNORECASE,
 )
+_CURRENT_VERSION_PATTERN = re.compile(
+    r"\b(?:current|latest|newest|active|in force|currently|now|"
+    r"текущ\w*|актуальн\w*|действующ\w*|последн\w*|сейчас)\b",
+    re.IGNORECASE,
+)
+_SUPERSEDED_PATTERN = re.compile(
+    r"\b(?:superseded|outdated|obsolete|deprecated|replaced by|"
+    r"no longer in effect|устаревш\w*|замен[её]н\w*|"
+    r"не действует|утратил[ао]?\s+силу)\b",
+    re.IGNORECASE,
+)
+_SUPERSEDED_RANK_WEIGHT = 0.1
+
+
+def _prefers_current_version(query: str) -> bool:
+    return bool(_CURRENT_VERSION_PATTERN.search(query))
+
+
+def _is_superseded_document(document: Document) -> bool:
+    # Inspect both title and full text once per document. Keep historical
+    # documents searchable; only down-rank explicitly superseded ones when
+    # the user's query asks for the current/latest policy.
+    return bool(
+        _SUPERSEDED_PATTERN.search(
+            f"{document.title}\n{document.content}"
+        )
+    )
 
 
 def _negation_signature(text: str) -> frozenset[str]:
@@ -212,6 +239,8 @@ async def search_document_chunks(
     candidate_limit = limit * 10
     scores: dict[int, float] = {}
     chunks_by_id: dict[int, dict] = {}
+    prefer_current_version = _prefers_current_version(query)
+    superseded_by_document: dict[int, bool] = {}
 
     def add_ranked_results(rows, *, semantic: bool = False) -> None:
         for rank, (document, chunk, raw_score, *_) in enumerate(rows, start=1):
@@ -230,9 +259,16 @@ async def search_document_chunks(
                 "source_page": chunk.source_page,
                 "source_section": chunk.source_section,
             }
-            scores[chunk.id] = scores.get(chunk.id, 0.0) + (
-                1.0 / (reciprocal_rank_constant + rank)
-            )
+            contribution = 1.0 / (reciprocal_rank_constant + rank)
+            if prefer_current_version:
+                if document.id not in superseded_by_document:
+                    superseded_by_document[document.id] = (
+                        _is_superseded_document(document)
+                    )
+                if superseded_by_document[document.id]:
+                    contribution *= _SUPERSEDED_RANK_WEIGHT
+
+            scores[chunk.id] = scores.get(chunk.id, 0.0) + contribution
 
     # Encode all query variants in one worker-thread call. SentenceTransformer
     # inference is synchronous/CPU-bound; batching avoids repeated model setup

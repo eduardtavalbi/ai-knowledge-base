@@ -185,6 +185,36 @@ async def test_expand_search_queries_ignores_empty_model_response():
 
 
 @pytest.mark.asyncio
+async def test_expand_search_queries_requests_an_opposite_language_variant():
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        return_value=SimpleNamespace(
+            text=(
+                "Can contractors use an employee VPN profile?\n"
+                "Как подрядчикам получить удалённый доступ?"
+            )
+        )
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        queries = await expand_search_queries(
+            "Может ли подрядчик использовать VPN-профиль сотрудника?",
+            max_queries=3,
+        )
+
+    assert queries[0] == "Может ли подрядчик использовать VPN-профиль сотрудника?"
+    assert "Can contractors use an employee VPN profile?" in queries
+    prompt = client.aio.models.generate_content.await_args.kwargs["contents"]
+    assert "с русского на английский" in prompt
+    assert "с английского на русский" in prompt
+    instruction = (
+        client.aio.models.generate_content.await_args.kwargs[
+            "config"
+        ].system_instruction
+    )
+    assert "Сохраняй сущности, ограничения и отрицания" in instruction
+
+@pytest.mark.asyncio
 async def test_expand_search_queries_deduplicates_and_respects_limit():
     client = MagicMock()
     client.aio.models.generate_content = AsyncMock(

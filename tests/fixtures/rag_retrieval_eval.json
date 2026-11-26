@@ -1,0 +1,197 @@
+{
+  "version": 2,
+  "description": "Bilingual synthetic retrieval benchmark with distractors, a superseded policy, ambiguous access policies and unanswerable queries. Replace or extend with reviewed, anonymized product-domain documents before using as a release gate.",
+  "documents": [
+    {
+      "title": "Политика удалённого доступа",
+      "content": "Для удалённого подключения к корпоративной сети сотрудник использует VPN-клиент. Вход в VPN защищён многофакторной аутентификацией (MFA). При потере второго фактора сотрудник обращается в службу поддержки."
+    },
+    {
+      "title": "Политика паролей",
+      "content": "Пароль учётной записи должен содержать не менее 14 символов. Рекомендуется использовать уникальную парольную фразу. Повторное использование корпоративного пароля на внешних сайтах запрещено. Плановой периодической ротации паролей нет; пароль необходимо немедленно сменить при подозрении на компрометацию или по указанию службы безопасности."
+    },
+    {
+      "title": "Политика отпусков 2026",
+      "content": "Действующая с 1 января 2026 года политика предоставляет сотрудникам 28 календарных дней ежегодного оплачиваемого отпуска. Даты отпуска необходимо заранее согласовать с непосредственным руководителем."
+    },
+    {
+      "title": "Правила командировочных расходов",
+      "content": "Отчёт о командировочных расходах необходимо подать в течение 10 рабочих дней после возвращения. К отчёту прикладываются чеки и подтверждение оплаты."
+    },
+    {
+      "title": "Customer Support Data Retention",
+      "content": "Customer support tickets and related conversation logs are retained for 30 days after ticket closure. Legal holds and active security investigations may require a longer retention period approved by Legal."
+    },
+    {
+      "title": "Security Incident Response",
+      "content": "Employees must report suspected security incidents to the Security team immediately using the incident portal. Do not delete suspicious messages or attempt independent remediation before evidence is preserved."
+    },
+    {
+      "title": "Employee Access Provisioning",
+      "content": "A new employee receives access only after the manager submits an approved access request. System owners review privileged access separately, and access is removed when employment ends."
+    },
+    {
+      "title": "Database Backup Policy",
+      "content": "Production PostgreSQL databases are backed up every 24 hours. Backups must be encrypted at rest and copied to a separate storage account. Restore tests are performed at least once per quarter."
+    },
+    {
+      "title": "Office Cafeteria Menu",
+      "content": "The cafeteria menu is updated every Monday. Lunch includes soup, vegetables, rice, and seasonal fruit."
+    },
+    {
+      "title": "Product Marketing Calendar",
+      "content": "The marketing team publishes campaign announcements on the first Tuesday of each month and reviews engagement metrics every Friday."
+    },
+    {
+      "title": "Frontend Release Notes",
+      "content": "The web interface uses React and TypeScript. Minor visual updates are released after the weekly frontend review."
+    },
+    {
+      "title": "Политика доступа подрядчиков",
+      "content": "Подрядчики подключаются к внутренним системам через отдельный защищённый шлюз подрядчиков. Доступ требует одобрения внутреннего спонсора и ограничивается согласованными приложениями. Подрядчикам запрещено использовать VPN-профили штатных сотрудников."
+    },
+    {
+      "title": "Политика отпусков 2024 (устаревшая)",
+      "content": "Архивная политика 2024 года предоставляла 25 календарных дней ежегодного оплачиваемого отпуска. Эта редакция заменена политикой отпусков, действующей с 1 января 2026 года."
+    },
+    {
+      "title": "Политика обмена клиентскими данными",
+      "content": "Клиентские документы и персональные данные разрешено передавать только через утверждённые корпоративные системы с контролем доступа. Пересылка клиентских документов на личную электронную почту запрещена."
+    }
+  ],
+  "queries": [
+    {
+      "id": "vpn_remote_ru",
+      "language": "ru",
+      "query": "Как сотруднику подключиться к корпоративной сети из дома?",
+      "expected_titles": [
+        "Политика удалённого доступа"
+      ]
+    },
+    {
+      "id": "password_length_ru",
+      "language": "ru",
+      "query": "Какой минимальной длины должен быть корпоративный пароль?",
+      "expected_titles": [
+        "Политика паролей"
+      ]
+    },
+    {
+      "id": "annual_leave_ru",
+      "language": "ru",
+      "query": "Сколько дней ежегодного оплачиваемого отпуска положено сотруднику?",
+      "expected_titles": [
+        "Политика отпусков 2026"
+      ]
+    },
+    {
+      "id": "expense_deadline_ru",
+      "language": "ru",
+      "query": "За какой срок нужно сдать отчёт о расходах после командировки?",
+      "expected_titles": [
+        "Правила командировочных расходов"
+      ]
+    },
+    {
+      "id": "support_retention_en",
+      "language": "en",
+      "query": "How long are customer support tickets kept after closure?",
+      "expected_titles": [
+        "Customer Support Data Retention"
+      ]
+    },
+    {
+      "id": "incident_reporting_en",
+      "language": "en",
+      "query": "Where should an employee report a suspected security incident?",
+      "expected_titles": [
+        "Security Incident Response"
+      ]
+    },
+    {
+      "id": "employee_access_en",
+      "language": "en",
+      "query": "What approval is needed before a new employee gets system access?",
+      "expected_titles": [
+        "Employee Access Provisioning"
+      ]
+    },
+    {
+      "id": "database_backup_en",
+      "language": "en",
+      "query": "How often must production PostgreSQL backups be created?",
+      "expected_titles": [
+        "Database Backup Policy"
+      ]
+    },
+    {
+      "id": "contractor_access_ru",
+      "language": "ru",
+      "query": "Может ли подрядчик подключаться к внутренней сети через VPN-профиль штатного сотрудника?",
+      "expected_titles": [
+        "Политика доступа подрядчиков"
+      ]
+    },
+    {
+      "id": "contractor_access_en",
+      "language": "en",
+      "query": "Can a contractor connect using an employee VPN profile?",
+      "expected_titles": [
+        "Политика доступа подрядчиков"
+      ]
+    },
+    {
+      "id": "current_leave_en",
+      "language": "en",
+      "query": "What is the current annual leave allowance in 2026, not the superseded policy?",
+      "expected_titles": [
+        "Политика отпусков 2026"
+      ]
+    },
+    {
+      "id": "current_leave_ru",
+      "language": "ru",
+      "query": "Сколько дней отпуска действует по актуальной политике 2026 года, а не по архивной редакции?",
+      "expected_titles": [
+        "Политика отпусков 2026"
+      ]
+    },
+    {
+      "id": "password_rotation_en",
+      "language": "en",
+      "query": "How often must employees rotate their passwords?",
+      "expected_titles": [
+        "Политика паролей"
+      ]
+    },
+    {
+      "id": "personal_email_ru",
+      "language": "ru",
+      "query": "Можно ли переслать клиентские документы на личную электронную почту?",
+      "expected_titles": [
+        "Политика обмена клиентскими данными"
+      ]
+    },
+    {
+      "id": "ceo_phone_unanswerable",
+      "language": "en",
+      "query": "What is the CEO's personal mobile phone number?",
+      "answerable": false,
+      "expected_titles": []
+    },
+    {
+      "id": "production_host_unanswerable",
+      "language": "en",
+      "query": "What is the hostname of the production PostgreSQL primary server?",
+      "answerable": false,
+      "expected_titles": []
+    },
+    {
+      "id": "approved_ai_vendor_unanswerable",
+      "language": "ru",
+      "query": "Какой поставщик предоставляет внутреннего корпоративного AI-ассистента?",
+      "answerable": false,
+      "expected_titles": []
+    }
+  ]
+}
