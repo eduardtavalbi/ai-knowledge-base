@@ -2,9 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/postgres-backup-restore-runbook]
   pull_request:
-    branches: [main, feat/atomic-document-rollback-tests]
+    branches: [main]
 
 jobs:
   test:
@@ -104,3 +104,45 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -v
+
+      - name: Exercise Compose backup and restore scripts
+        env:
+          POSTGRES_PASSWORD: postgres
+          AUTH_SECRET_KEY: ci-auth-secret-key-with-more-than-32-characters
+        run: |
+          set -eu
+          export COMPOSE_PROJECT_NAME="mindbase-backup-restore-${GITHUB_RUN_ID}"
+          export DB_PORT="$((20000 + GITHUB_RUN_ID % 20000))"
+          export DATABASE_URL="postgresql+psycopg2://postgres@127.0.0.1:${DB_PORT}/knowledge_base"
+          export PGPASSWORD="$POSTGRES_PASSWORD"
+          trap 'docker compose down --volumes --remove-orphans >/dev/null 2>&1 || true' EXIT
+
+          docker compose up -d --wait db
+          docker compose exec -T db pg_isready -U postgres -d knowledge_base
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine
+          from sqlalchemy.engine import make_url
+
+          url = make_url(os.environ["DATABASE_URL"])
+          assert url.password is None
+          with create_engine(url).connect() as connection:
+              print("SQLAlchemy connection verified:", connection.exec_driver_sql("SELECT current_database()").scalar_one())
+          PY
+          psql -h 127.0.0.1 -p "$DB_PORT" -U postgres -d knowledge_base -v ON_ERROR_STOP=1 -c "SELECT current_user, current_database();"
+          python -m alembic upgrade head
+
+          backup_path="$(bash scripts/backup_postgres.sh)"
+          test -s "$backup_path"
+          test -s "$backup_path.sha256"
+          bash scripts/verify_postgres_backup.sh "$backup_path"
+
+          corrupt_path="${backup_path}.corrupt"
+          cp "$backup_path" "$corrupt_path"
+          cp "$backup_path.sha256" "$corrupt_path.sha256"
+          printf 'corruption-test' >> "$corrupt_path"
+          if bash scripts/verify_postgres_backup.sh "$corrupt_path"; then
+            echo "Restore verifier accepted a corrupted backup" >&2
+            exit 1
+          fi
+          rm -f "$corrupt_path" "$corrupt_path.sha256"
