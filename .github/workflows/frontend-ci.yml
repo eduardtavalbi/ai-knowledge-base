@@ -70,6 +70,7 @@ jobs:
             grep -Eiq '^Referrer-Policy: strict-origin-when-cross-origin$' "$headers"
             grep -Eiq '^Permissions-Policy: camera=\(\), microphone=\(\), geolocation=\(\)$' "$headers"
             grep -Eiq "^Content-Security-Policy:.*default-src 'self'.*object-src 'none'.*frame-ancestors 'none'.*script-src 'self'" "$headers"
+            grep -Eiq "^Content-Security-Policy:.*connect-src 'self' http://localhost:8000" "$headers"
           done
 
           # HTML must be revalidated, while fingerprinted build assets are immutable.
@@ -82,3 +83,4 @@ jobs:
           grep -Eiq '^Cache-Control: public, max-age=31536000, immutable$' /tmp/mindbase-asset.normalized
           grep -Eiq '^Permissions-Policy: camera=\(\), microphone=\(\), geolocation=\(\)$' /tmp/mindbase-asset.normalized
           grep -Eiq "^Content-Security-Policy:.*default-src 'self'.*object-src 'none'.*frame-ancestors 'none'.*script-src 'self'" /tmp/mindbase-asset.normalized
+          grep -Eiq "^Content-Security-Policy:.*connect-src 'self' http://localhost:8000" /tmp/mindbase-asset.normalized
