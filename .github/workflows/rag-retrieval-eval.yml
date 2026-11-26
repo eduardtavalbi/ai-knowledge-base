@@ -60,7 +60,6 @@ jobs:
       - name: Run real-embedding PostgreSQL retrieval benchmark
         env:
           PG_TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/mindbase_eval
-          HF_HOME: ~/.cache/huggingface
           TOKENIZERS_PARALLELISM: "false"
         run: |
           set -o pipefail
