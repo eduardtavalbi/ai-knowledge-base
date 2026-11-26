@@ -79,6 +79,7 @@ async function main() {
     await page.getByRole('button', { name: 'Открыть документ E2E Seed Document' }).click();
     await page.locator('#document-modal-title').waitFor();
     await page.getByText('A seeded full-stack E2E document.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Закрыть документ' }).click();
 
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Удалить документ E2E Seed Document' }).click();
