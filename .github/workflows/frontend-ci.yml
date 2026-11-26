@@ -43,7 +43,7 @@ jobs:
 
       - name: Smoke test frontend container
         run: |
-          set -eux
+          set -eu
           docker run --detach --name mindbase-frontend-smoke --publish 127.0.0.1:8080:80 mindbase-frontend:ci
           trap 'docker rm --force mindbase-frontend-smoke >/dev/null 2>&1 || true' EXIT
 
@@ -59,24 +59,50 @@ jobs:
           curl --fail --silent http://127.0.0.1:8080/documents/42 -o /tmp/mindbase-route.html
           grep -q 'id="root"' /tmp/mindbase-route.html
 
-          # Security headers must be present on HTML and fingerprinted assets.
-          curl --fail --silent --dump-header /tmp/mindbase-root.headers -o /dev/null http://127.0.0.1:8080/
-          curl --fail --silent --dump-header /tmp/mindbase-route.headers -o /dev/null http://127.0.0.1:8080/documents/42
-          cat /tmp/mindbase-root.headers /tmp/mindbase-route.headers
-          for headers in /tmp/mindbase-root.headers /tmp/mindbase-route.headers; do
-            grep -Eiq '^X-Content-Type-Options: nosniff\r?$' "$headers"
-            grep -Eiq '^X-Frame-Options: DENY\r?$' "$headers"
-            grep -Eiq '^Referrer-Policy: strict-origin-when-cross-origin\r?$' "$headers"
-            grep -Eiq '^Permissions-Policy: camera=\(\), microphone=\(\), geolocation=\(\)\r?$' "$headers"
-            grep -Eiq "^Content-Security-Policy:.*default-src 'self'.*object-src 'none'.*frame-ancestors 'none'.*script-src 'self'" "$headers"
-          done
-
-          # HTML must be revalidated, while fingerprinted build assets are immutable.
-          grep -Eiq '^Cache-Control: no-cache\r?$' /tmp/mindbase-root.headers
+          # Fetch headers from the HTML shell, a client-side route and a hashed asset.
+          curl --fail --silent --show-error --dump-header /tmp/mindbase-root.headers -o /dev/null http://127.0.0.1:8080/
+          curl --fail --silent --show-error --dump-header /tmp/mindbase-route.headers -o /dev/null http://127.0.0.1:8080/documents/42
           asset_path="$(grep -oE '/assets/[^"]+\.(js|css)' /tmp/mindbase-index.html | head -n 1)"
           test -n "$asset_path"
-          curl --fail --silent --dump-header /tmp/mindbase-asset.headers -o /dev/null "http://127.0.0.1:8080$asset_path"
-          cat /tmp/mindbase-asset.headers
-          grep -Eiq '^Cache-Control: public, max-age=31536000, immutable\r?$' /tmp/mindbase-asset.headers
-          grep -Eiq '^Permissions-Policy: camera=\(\), microphone=\(\), geolocation=\(\)\r?$' /tmp/mindbase-asset.headers
-          grep -Eiq "^Content-Security-Policy:.*default-src 'self'.*object-src 'none'.*frame-ancestors 'none'.*script-src 'self'" /tmp/mindbase-asset.headers
+          curl --fail --silent --show-error --dump-header /tmp/mindbase-asset.headers -o /dev/null "http://127.0.0.1:8080$asset_path"
+
+          python - <<'PY'
+          from pathlib import Path
+
+          def read_headers(path: str) -> dict[str, str]:
+              parsed: dict[str, str] = {}
+              for line in Path(path).read_text().splitlines():
+                  if ":" in line:
+                      name, value = line.split(":", 1)
+                      parsed[name.strip().lower()] = value.strip()
+              return parsed
+
+          required = {
+              "x-content-type-options": "nosniff",
+              "x-frame-options": "DENY",
+              "referrer-policy": "strict-origin-when-cross-origin",
+              "permissions-policy": "camera=(), microphone=(), geolocation=()",
+          }
+          for path in (
+              "/tmp/mindbase-root.headers",
+              "/tmp/mindbase-route.headers",
+              "/tmp/mindbase-asset.headers",
+          ):
+              headers = read_headers(path)
+              for name, expected in required.items():
+                  actual = headers.get(name)
+                  if actual != expected:
+                      raise SystemExit(f"{path}: expected {name}={expected!r}, got {actual!r}")
+              csp = headers.get("content-security-policy", "")
+              for directive in ("default-src 'self'", "object-src 'none'", "frame-ancestors 'none'", "script-src 'self'"):
+                  if directive not in csp:
+                      raise SystemExit(f"{path}: CSP is missing {directive!r}: {csp!r}")
+
+          root_headers = read_headers("/tmp/mindbase-root.headers")
+          if "no-cache" not in root_headers.get("cache-control", ""):
+              raise SystemExit(f"HTML must be revalidated: {root_headers.get('cache-control')!r}")
+
+          asset_headers = read_headers("/tmp/mindbase-asset.headers")
+          if "public, max-age=31536000, immutable" not in asset_headers.get("cache-control", ""):
+              raise SystemExit(f"Fingerprint asset must be immutable: {asset_headers.get('cache-control')!r}")
+          PY
