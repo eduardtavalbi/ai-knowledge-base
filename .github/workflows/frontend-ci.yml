@@ -143,7 +143,10 @@ jobs:
       - name: Start full-stack Compose services
         working-directory: ${{ github.workspace }}
         run: |
-          docker compose up --build --detach --wait --wait-timeout 300 || (docker compose ps --all; docker compose logs --no-color api db; exit 1)
+          docker compose build api frontend
+          docker compose up --detach --wait --wait-timeout 120 db
+          docker compose run --rm --no-deps api python -c "import os, psycopg2; from sqlalchemy.engine import make_url; u=make_url(os.environ['DATABASE_URL']); c=psycopg2.connect(host=u.host, port=u.port or 5432, dbname=u.database, user=u.username, password=u.password); c.close(); print('API container PostgreSQL credentials verified')"
+          docker compose up --detach --wait --wait-timeout 300 api frontend || (docker compose ps --all; docker compose logs --no-color api db; exit 1)
           curl --fail --silent http://127.0.0.1:8000/ready
           curl --fail --silent http://127.0.0.1:5173/ -o /dev/null
 
