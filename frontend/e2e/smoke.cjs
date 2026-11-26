@@ -118,12 +118,16 @@ async function main() {
     await page.getByLabel('Email').fill('e2e@example.com');
     await page.getByLabel('Пароль').fill('long-password-for-e2e');
     await page.getByRole('button', { name: 'Войти' }).click();
+    await page.getByRole('button', { name: 'Семантический поиск' }).waitFor();
+    await page.getByRole('button', { name: /Моя база знаний/ }).click();
     await page.getByText('Security policy', { exact: true }).waitFor();
 
     assert(apiRequests.some((item) => item.path === '/documents/' && item.authorization === 'Bearer e2e-access-token'));
 
     // A reload exercises the refresh-cookie path and rehydrates the workspace.
     await page.reload();
+    await page.getByRole('button', { name: 'Семантический поиск' }).waitFor();
+    await page.getByRole('button', { name: /Моя база знаний/ }).click();
     await page.getByText('Security policy', { exact: true }).waitFor();
     assert(apiRequests.some((item) => item.path === '/documents/' && item.authorization === 'Bearer e2e-refreshed-token'));
 
