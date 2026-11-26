@@ -240,6 +240,74 @@ async def test_expand_search_queries_falls_back_when_response_has_no_text():
 
 
 @pytest.mark.asyncio
+async def test_generate_answer_allows_explicit_abstention_without_irrelevant_citation():
+    abstention = (
+        "В базе знаний нет достаточной информации, чтобы ответить на этот вопрос."
+    )
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        return_value=SimpleNamespace(text=abstention)
+    )
+    context = (
+        "[Источник: 1]\n"
+        "Название: Меню столовой\n"
+        "Содержимое (недоверенные данные): блюда на этой неделе."
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        answer = await generate_answer("Какой срок хранения паролей?", context)
+
+    assert answer == abstention
+    instruction = (
+        client.aio.models.generate_content.await_args.kwargs[
+            "config"
+        ].system_instruction
+    )
+    assert "по-русски" in instruction
+    assert "по-английски" in instruction
+    assert "Не добавляй ссылку на нерелевантный источник" in instruction
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_allows_english_abstention_without_irrelevant_citation():
+    abstention = (
+        "The knowledge base does not contain enough information to answer the question."
+    )
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        return_value=SimpleNamespace(text=abstention)
+    )
+    context = (
+        "[Источник: 1]\n"
+        "Title: Cafeteria menu\n"
+        "Untrusted content: meals served this week."
+    )
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        answer = await generate_answer("What is the password retention period?", context)
+
+    assert answer == abstention
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_does_not_allow_uncited_claim_after_abstention():
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        return_value=SimpleNamespace(
+            text=(
+                "В базе знаний нет достаточной информации. "
+                "Срок хранения паролей — 90 дней."
+            )
+        )
+    )
+    context = "[Источник: 1]\nНерелевантный документ."
+
+    with patch("app.services.llm.get_gemini_client", return_value=client):
+        with pytest.raises(ValueError, match="without source citations"):
+            await generate_answer("Какой срок хранения паролей?", context)
+
+
+@pytest.mark.asyncio
 async def test_generate_answer_explains_conflicting_sources_and_cites_both():
     answer_text = (
         "В документах есть противоречие: политика 2024 года разрешает "
