@@ -43,7 +43,7 @@ jobs:
 
       - name: Smoke test frontend container
         run: |
-          set -eu
+          set -eux
           docker run --detach --name mindbase-frontend-smoke --publish 127.0.0.1:8080:80 mindbase-frontend:ci
           trap 'docker rm --force mindbase-frontend-smoke >/dev/null 2>&1 || true' EXIT
 
@@ -62,6 +62,7 @@ jobs:
           # Security headers must be present on HTML and fingerprinted assets.
           curl --fail --silent --dump-header /tmp/mindbase-root.headers -o /dev/null http://127.0.0.1:8080/
           curl --fail --silent --dump-header /tmp/mindbase-route.headers -o /dev/null http://127.0.0.1:8080/documents/42
+          cat /tmp/mindbase-root.headers /tmp/mindbase-route.headers
           for headers in /tmp/mindbase-root.headers /tmp/mindbase-route.headers; do
             grep -Eiq '^X-Content-Type-Options: nosniff\r?$' "$headers"
             grep -Eiq '^X-Frame-Options: DENY\r?$' "$headers"
@@ -75,6 +76,7 @@ jobs:
           asset_path="$(grep -oE '/assets/[^"]+\.(js|css)' /tmp/mindbase-index.html | head -n 1)"
           test -n "$asset_path"
           curl --fail --silent --dump-header /tmp/mindbase-asset.headers -o /dev/null "http://127.0.0.1:8080$asset_path"
+          cat /tmp/mindbase-asset.headers
           grep -Eiq '^Cache-Control: public, max-age=31536000, immutable\r?$' /tmp/mindbase-asset.headers
           grep -Eiq '^Permissions-Policy: camera=\(\), microphone=\(\), geolocation=\(\)\r?$' /tmp/mindbase-asset.headers
           grep -Eiq "^Content-Security-Policy:.*default-src 'self'.*object-src 'none'.*frame-ancestors 'none'.*script-src 'self'" /tmp/mindbase-asset.headers
