@@ -124,28 +124,29 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 - Factual claims and mixed refusal-plus-claim responses still require valid citations. Latest PR #9 Backend CI passed 207 tests; Frontend CI passed on the same head.
 - Remaining quality work is a labelled corpus and real-embedding benchmark (Recall@K/MRR), followed by controlled groundedness/citation evaluation; unit tests alone are not a live model-quality benchmark.
 
-## RAG retrieval benchmark — verified technical baseline
+## RAG retrieval benchmark — expanded corpus verification in progress
 
-- PR #12 adds an 8-query Russian/English labelled corpus with 11 synthetic documents and distractors.
-- The opt-in benchmark uses the real `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` embeddings and PostgreSQL hybrid vector/FTS retrieval, with Gemini query expansion disabled to isolate ranking.
-- RAG retrieval evaluation #3 passed on head `34a9f1c`: all 8 relevant documents ranked first; Recall@5 = 1.00, MRR@5 = 1.00, misses = 0. The JSON report is uploaded as artifact `mindbase-rag-retrieval-evaluation` (run #3).
-- Backend CI #407 passed 209 tests on the same PR #12 head. The benchmark initially exposed missing `UserSession` ORM registration; explicit model imports and a mapper-configuration regression test were added before the successful run.
-- This is only a technical baseline on a small synthetic corpus, not evidence of commercial-domain retrieval quality. Next quality step is a larger reviewed, anonymized corpus with realistic ambiguous, contradictory and no-answer cases.
+- PR #12 now has a version-2 bilingual corpus of 14 synthetic documents and 17 queries: 14 answerable, 3 unanswerable. It includes near-duplicate employee/contractor VPN policies, a superseded leave policy, customer-data handling and no-answer cases.
+- The opt-in benchmark uses the real `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` embeddings and PostgreSQL hybrid vector/FTS retrieval, with Gemini query rewriting disabled to isolate ranking.
+- Initial run #3 passed on the earlier 8-query corpus with Recall@5/MRR@5 = 1.00. This is not a metric for the expanded corpus and must not be presented as its result.
+- Expanded RAG evaluation #10 and Backend CI #436 are running on PR #12 head `fc3d94c`. Wait for the JSON artifact before recording answerable Recall@5/MRR@5 and unanswerable context retrieval rate.
+- ORM mapper registration and no-answer metric unit tests are present. Even a perfect synthetic score remains a technical baseline, not evidence of commercial-domain retrieval quality.
 
-## Operations audit — backup/restore verification pending
+## Operations audit — backup/restore verification passed
 
 - `/health` is a liveness check; `/ready` checks PostgreSQL connectivity. Compose starts the API only after database health and applies Alembic migrations before Uvicorn.
-- PR #10 now includes executable `scripts/backup_postgres.sh` and `scripts/verify_postgres_backup.sh`. The first creates and validates a custom-format dump plus SHA-256 checksum; the second verifies the checksum, restores into a temporary database and checks the Alembic version and `public.documents` table before cleanup.
-- Backend CI #405 passed Compose validation, DB connectivity/migrations and 204 tests but failed at the SQLAlchemy migration connection. The next revision moved the SQLAlchemy connectivity precheck after Compose DB startup, isolates project/volume/port per run, and adds a corrupted-archive rejection test. Latest PR #10 head is `c36639c`; no successful run on that head is available yet. The PR branch now also carries the current progress ledger and stacked CI workflow files from its base branch.
-- Both shell scripts pass `bash -n`; local Docker execution is unavailable, so the disposable-PostgreSQL CI run remains the required end-to-end verification.
+- PR #10 includes executable `scripts/backup_postgres.sh` and `scripts/verify_postgres_backup.sh`: custom-format archive, SHA-256 sidecar, checksum validation, temporary-database restore, Alembic/schema verification and cleanup.
+- Backend CI #429 passed on code head `84a307e`: all 204 tests passed; isolated Compose PostgreSQL started; migrations ran; backup and checksum were created; restore verified Alembic version `9f4c2e7a1b60` and `public.documents`; a deliberately corrupted archive was rejected.
+- Frontend CI #271 also passed. PR #10 is back to Draft/base PR #7; latest head `4b3adfd` only scopes the unrelated RAG workflow to its own evaluation branch. No PR was merged.
+- Shell syntax checks passed. CI is the end-to-end Docker proof; production still needs encrypted off-site backup storage, retention policy and scheduled restore drills.
 
 ## Next actions — continue here
 
-1. PR #10: get the isolated Compose backup/restore workflow passing on the latest head `c36639c`. The run must prove archive creation, checksum validation, restore into a temporary database, schema checks, cleanup and rejection of a corrupted archive.
-2. PR #11: container deployment and security headers are verified on head `f126903` (Frontend CI #262 and Backend CI #403 passed). Move on to browser-level journeys: registration/login, session refresh, upload, document CRUD, search, AI answer, export and mobile navigation.
-3. PR #12: real-embedding smoke benchmark is verified (Recall@5/MRR@5 = 1.00 on 8 synthetic queries). Expand to a reviewed, anonymized corpus with realistic ambiguous, contradictory and no-answer examples before using metrics as a release gate.
+1. PR #12: finish expanded 17-query real-embedding run #10 on head `fc3d94c`; record Recall@5/MRR@5 for 14 answerable queries and no-answer context retrieval rate for 3 unanswerable queries. Backend CI #436 is also running.
+2. PR #11: container deployment and security headers are verified on head `f126903` (Frontend CI #262 and Backend CI #403 passed). Add browser-level journeys: registration/login, session refresh, upload, document CRUD, search, AI answer, export and mobile navigation.
+3. PR #10: backup/restore is verified by CI #429 (204 tests, real temporary-database restore, schema check, cleanup and corrupted-archive rejection). Next operational gap is production off-site encryption/retention and recurring restore drills.
 4. Finish targeted PR #7 security/reliability review; the Retry-After race fix remains verified, and do not reopen completed work without a concrete regression.
-5. Audit clean-start deployment, reverse-proxy/TLS/HSTS configuration, backups/restore, logs/monitoring and recovery assumptions against an actual production-like environment.
+5. Audit clean-start deployment, reverse-proxy/TLS/HSTS configuration, logs/monitoring and recovery assumptions against a production-like environment.
 6. Keep PRs #7–#12 Draft/unmerged until explicit user authorization. Do not calculate an overall percentage until all six areas have auditable deliverable inventories.
 
 ## Update log
@@ -164,4 +165,5 @@ This area inventory is not yet a percentage. Convert it into a weighted delivera
 | 2026-11-26 | Hardened frontend container CSP/Permissions-Policy and restricted `connect-src` to the configured API origin. | PR #11 head `f126903`; previous Frontend CI #258 and Backend CI #391 passed before the final CSP-origin tightening; latest #262/#403 pending. |
 | 2026-11-26 | Executed the first real-embedding RAG benchmark against disposable pgvector PostgreSQL; fixed missing ORM registration and added mapper regression coverage. | PR #12 head `34a9f1c`; RAG evaluation #3 passed: 8/8 relevant docs at rank 1, Recall@5 1.00, MRR@5 1.00, misses 0; artifact `15075381093`; Backend CI #407 passed 209 tests. |
 | 2026-11-26 | Completed strict frontend CSP origin binding and verified frontend container behavior. | PR #11 head `f126903`; Frontend CI #262 and Backend CI #403 passed; CSP allows only the configured `VITE_API_URL` for connections. |
-| 2026-11-26 | Added checksum verification and corrupted-archive rejection coverage to PostgreSQL backup/restore workflow. | PR #10 head `c36639c`; prior run #405 failed at SQLAlchemy DB connection after 204 tests; latest workflow rerun not yet available; branch synced with current PR #7 ledger/workflows. |
+| 2026-11-26 | Completed PostgreSQL backup/restore CI end-to-end, including checksum and corrupted-archive rejection. | PR #10 code head `84a307e`; Backend CI #429 passed 204 tests, temporary restore, Alembic/schema checks and corrupt archive rejection; Frontend CI #271 passed; PR base restored to #7, latest head `4b3adfd`. |
+| 2026-11-26 | Expanded the RAG benchmark to 17 queries across 14 documents, including 3 no-answer cases; added separate no-answer retrieval false-positive metric and clarified that it does not measure answer abstention. | PR #12 head `fc3d94c`; expanded RAG evaluation #10 and Backend CI #436 running; earlier 8-query score explicitly retained as historical only. |
