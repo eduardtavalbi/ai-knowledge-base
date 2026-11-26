@@ -318,6 +318,8 @@ python -m scripts.cleanup_security_audit
 
 Override the configured period when needed with `--retention-days 90`. Run it using the same production database credentials as the API. Confirm legal, contractual, and incident-response retention requirements before selecting a period. Back up PostgreSQL regularly, encrypt backups at rest, restrict restore access, and periodically test restores.
 
+For Docker Compose PostgreSQL backups, run `bash scripts/backup_postgres.sh`; verify an archive by restoring it into a temporary database with `bash scripts/verify_postgres_backup.sh path/to/backup.dump`. See [the backup and restore runbook](docs/POSTGRES_BACKUP_RESTORE.md) for the destructive live-restore procedure and recovery requirements.
+
 ## Security Notes
 
 - Keep API keys and credentials in local environment files.

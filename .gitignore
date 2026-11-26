@@ -21,6 +21,7 @@ __pycache__/
 *.log
 
 # Local databases and backups
+backups/
 *.db
 *.sqlite
 *.sqlite3
